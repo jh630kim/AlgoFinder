@@ -1,0 +1,43 @@
+{
+  "test_01_fetch_master_dataframe": {
+    "input": {
+      "market_code": "KRX"
+    },
+    "expected": {
+      "min_count": 1
+    }
+  },
+  "test_02_filter_target_symbols": {
+    "input": {
+      "items": [
+        {
+          "code": "005930",
+          "name": "삼성전자",
+          "market": "KOSPI",
+          "sector": "KOSPI 200"
+        },
+        {
+          "code": "371160",
+          "name": "TIGER 미국나스닥100",
+          "market": "ETF",
+          "sector": "ETF"
+        },
+        {
+          "code": "000010",
+          "name": "일반종목",
+          "market": "KOSPI",
+          "sector": "기타"
+        }
+      ]
+    },
+    "expected": {
+      "target_symbols": ["005930", "371160"]
+    }
+  },
+  "test_03_run_sync": {
+    "input": {},
+    "expected": {
+      "is_dict": true
+    }
+  }
+}

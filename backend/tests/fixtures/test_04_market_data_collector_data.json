@@ -1,0 +1,23 @@
+{
+  "test_01_fetch_trading_data_with_retry": {
+    "input": {
+      "symbol": "005930",
+      "start_date": "20260102",
+      "end_date": "20260102",
+      "max_retries": 3
+    },
+    "expected": {
+      "symbol": "005930"
+    }
+  },
+  "test_02_collect_target_market_data": {
+    "input": {
+      "start_date": "20260102",
+      "end_date": "20260102",
+      "incremental": true
+    },
+    "expected": {
+      "is_dict": true
+    }
+  }
+}

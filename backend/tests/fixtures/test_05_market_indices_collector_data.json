@@ -1,0 +1,21 @@
+{
+  "test_01_fetch_indices_and_rate": {
+    "input": {
+      "start_date": "20260102",
+      "end_date": "20260102"
+    },
+    "expected": {
+      "min_count": 1
+    }
+  },
+  "test_02_collect_market_indices": {
+    "input": {
+      "start_date": "20260102",
+      "end_date": "20260102",
+      "incremental": true
+    },
+    "expected": {
+      "is_dict": true
+    }
+  }
+}

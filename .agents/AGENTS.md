@@ -13,5 +13,7 @@
 - **모듈화 및 파일 크기 제한**: 파일당 주 객체 1개. 전체 길이 200줄 이내, 개별 메서드 30줄 이내 준수.
 - **UI 규격**: PC/모바일 접속 감지 분기. PC는 2분할 레이아웃(사이드바 너비 220px 고정, load_sidebar.js), 모바일은 상/하단 nav.
 - **입출력 검증 및 테스트 원칙**: tests/fixtures/ JSON/TXT 데이터 분리, test_*.py에서 inspect 활용 매개변수 완전성 검증 Assert 후 대조 출력. 항상 '정답(Expected)'과 '실제 출력(Actual)'을 1:1로 비교하도록 작성하며, 정답(기대값) 기준을 모를 때는 임의 추측 금지 및 사용자에게 사전에 질문하여 확인할 것.
+- **테스트 분류 및 넘버링 규칙**: 사용자가 번호로 손쉽게 실행을 지시할 수 있도록 테스트 파일 및 클래스에 순번(`test_01_...`)을 표기한다. 1번은 `core/models` 스키마 검증, 2번은 `repositories/` 폴더 내 모든 Repository 객체 검증 통합(`test_02_app_repositories.py`), 3번 이후는 `services/` 폴더 내 수집기 객체별 1:1 전용 테스트(`test_03_stock_master_collector.py`, `test_04_market_data_collector.py`, `test_05_market_indices_collector.py`)로 작성할 것.
+- **소스 변경 시 테스트 동기화 원칙**: 소스 코드(모듈/클래스/메서드)가 추가되거나 변경될 경우, 매칭되는 단위 테스트 코드 및 픽스처(Fixtures) 데이터도 반드시 함께 업데이트할 것.
 - **배치 및 알림**: BatchProcessor 및 DiscordNotifier (디스코드 웹훅 연동).
 - **보안 및 환경**: Flask, SQLite (`data/app.db`), `.env` 환경변수 관리.
