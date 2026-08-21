@@ -1,0 +1,116 @@
+[프로젝트: AlgoFinder - 국내 주식 수급 분석 및 퀀트 백테스팅 시스템]
+
+아래 요구사항 및 제공된 설계 파일(`AI 코딩 규칙.txt`, `db_schema.csv`)을 엄격히 준수하여 코드를 생략(placeholder, TODO) 없이 전체 구현
+
+---
+
+### [Step 1: 환경 설정, 데이터베이스 스키마 및 Repository 레이어 구현]
+
+1. **의존성 설정 (`requirements.txt`)**
+   - FastAPI, SQLAlchemy, Alembic, Pydantic (v2), PyKRX, FinanceDataReader, Pandas, NumPy, psycopg2-binary, aiohttp 등 프로젝트에 필요한 최신 라이브러리 명시.
+   - 기본적인 것만 우선 등록하고, 프로젝트를 진행하며 필요한 경우 계속 update
+
+2. **Core 설정 (`backend/app/core/`)**
+   - `config.py`: 환경 변수(`DATABASE_URL` 등) 관리 (`pydantic-settings` 활용).
+   - `database.py`: SQLAlchemy Engine, `sessionmaker`, Base 클래스 및 DB 세션 의존성(`get_db`) 주입 함수 구현.
+   ※ 참고: *.py 파일명은 예시이며, 생성하는 파일은 AI 코딩규칙.txt를 준수할것.
+
+3. **데이터 모델 (`backend/app/models/`)**
+   `db_schema.csv` 기반으로 SQLAlchemy ORM 모델 정의 (Index, Foreign Key, Type 명시):
+   - `AllStockMaster`: 전 증시 종목 마스터 (종목코드, 종목명, 시장구분, 시가총액, 상장주식수, 섹터 등).
+   - `InvestorTradingDaily`: 일자별 종목 수급 및 OHLCV 가격 데이터 (일자, 종목코드, 시가, 고가, 저가, 종가, 거래량, 거래대금, 개인/외국인/기관/연기금/금융투자/기타법인 순매수 금액 등).
+   - `MarketIndexDaily`: 주요 지수 및 환율 (일자, 코스피, 코스닥, S&P500, 원/달러 환율 등).
+   - `SyncLog`: 데이터 수집/동기화 실행 로그 (작업유형, 대상일자, 상태, 성공여부, 에러메시지, 실행시간 등).
+   - `StrategyLeaderboard`: 31개 퀀트 전략 백테스트 성과 리더보드 (전략ID, 총수익률, 연환산수익률(CAGR), MDD, 샤프지수, 승률 등).
+   - `StrategyTradeLog`: 백테스트 개별 체결 및 매매일지 (전략ID, 종목코드, 매수일/가, 매도일/가, 수익률, 보유기간, 청산사유 등).
+
+4. **Repository 레이어 (`backend/app/repositories/`)**
+   - 각 모델에 대응하는 CRUD 및 벌크 연산(Bulk Upsert/Insert)을 처리하는 Repository 클래스 구현.
+
+-----------------------------------------------------------
+
+### [Step 2: 데이터 수집기(Collector) 및 파이프라인 구현]
+
+`AI 코딩규칙.txt`의 디렉토리 구조를 준수하여 모듈화된 수집 스크립트를 작성해 줘.
+
+1. **종목 마스터 수집 (`collector/stock_master.py`)**
+   - `FinanceDataReader`를 사용하여 KOSPI, KOSDAQ, ETF 등 전체 종목 마스터를 DB(`AllStockMaster`)에 동기화(Upsert).
+   - 종목 마스터에서 '코스피 200', '코스닥 150', '종목명에 "미국"이 포함된 ETF'만 별도 타깃(`target_stocks`)으로 생성
+
+2. **일별 수급 및 OHLCV 수집 (`collector/market_data.py`)**
+   - `PyKRX` 및 `Naver Finance API/스크래핑`을 활용하여 위에서 필터링된 타깃 종목에 대해 일자별 주체별(개인, 외국인, 기관, 연기금 등) 순매수 데이터 및 OHLCV 수집.
+   - `InvestorTradingDaily` 테이블에 안전하게 적재(중복 수집 시 업데이트 처리).
+   * 수집 대상은 target_stocks의 symbol 컬럼에 있는 항목만 수집
+
+3. **안정성 및 예외 처리**
+   - DB 연결 실패 시 지연 재시도(Exponential Backoff / Retry) 로직 포함.
+   - 네트워크 요청 제한(Rate Limit) 대응 `time.sleep` 및 타임아웃 예외 처리.
+   - 모든 수집 단계의 시작, 종료, 에러 발생 내역을 `SyncLog` 테이블에 자동 기록.
+
+-----------------------------------------------------------
+[Step 3: 퀀트 전략 및 백테스팅 엔진 작성] 
+
+각 전략 모듈은 판다스(Pandas) 및 넘파이(Numpy)를 활용해 지표를 계산하고, 매수 신호(signal_buy)와 매도 신호(signal_sell)를 포함하는 데이터프레임을 반환해야 함.
+
+
+[1. 상세 전략별 구현 및 수식 명세]
+
+S1_MA_Cross (이동평균선 골든크로스 전략)
+- 파라미터: short_window=5, long_window=20, trend_window=60
+- 매수 조건: 5일 종가 이평선(sma5)이 20일 종가 이평선(sma20)을 위로 뚫는 골든크로스 발생 (sma5 > sma20 및 전일 sma5 <= sma20) AND 주가가 60일 이평선(sma60) 위에 위치 (정배열 추세).
+- 매도 조건: 5일선이 20일선을 아래로 뚫는 데드크로스 발생 (sma5 < sma20 및 전일 sma5 >= sma20).
+
+S1a_MA_Cross_Volume (거래량 150% 동반 이평 돌파 전략)
+- 파라미터: short_window=5, long_window=20, vol_mult=1.5
+- 매수 조건: S1_MA_Cross의 매수 AND 당일 거래량이 5일 거래량 이평선(vol_sma5)의 150% 이상 (volume >= vol_sma5 * 1.5).
+- 매도 조건: S1_MA_Cross 매도 OR (당일 음봉 close < open AND 거래량이 5일 거래량 이평의 150% 이상 폭발).
+※ 참고: S1_MA_Cross의 매수/매도 시그널 로직은 반드시 S1_MA_Cross 클래스의 메서드로 캡슐화하여 호출할 것.
+
+S1b_MA_Cross_Legacy (레거시 확률 수식 연동 전략)
+- 파라미터: short_window=5, long_window=20
+- 매수 조건: S1_MA_Cross의 매수 신호 발생 시 상승 확률이 55% 이상일 때 매수.
+- 매도 조건: S1_MA_Cross의 매도 신호
+※ 참고: S1_MA_Cross의 매수/매도 시그널 로직은 반드시 S1_MA_Cross 클래스의 메서드로 캡슐화하여 호출할 것.
+
+S1c_MA_Cross_Adaptive (20일선 추세 적응형 듀얼 전략)
+- 파라미터: short_window=5, long_window=20
+- 추세 판단: 20일선이 3일 전 대비 상승 중인 경우 (sma20 > sma20.shift(3)) -> 상승 추세 / 이하 -> 하락 및 횡보 추세.
+- 매수/매도 로직:
+- 상승 추세일 때: S1b 추세 추종 방식 적용
+- 하락 및 횡보 추세일 때: S1a 거래량 필터 방식 적용
+※ 참고: 매수/매도 시그널 로직은 반드시 S1a, S1b는 각 S1a_MA_Cross_Volume과 S1b_MA_Cross_Legacy 클래스의 메서드로 캡슐화하여 호출할 것.
+
+S2_Breakout (RSI 및 이격도 돌파 전략)
+- 파라미터: rsi_period=14, signal_period=9
+- 지표: 14일 RSI 및 RSI 9일 이평선(Signal), 5일 최저 RSI.
+- 매수 조건: RSI가 Signal선을 골든크로스 (RSI > Signal 및 전일 RSI <= Signal) AND 최근 5일 최저 RSI가 45 이하로 눌림목을 형성한 후 반등할 때.
+- 매도 조건: RSI가 70 이상 과매수 구간 진입 후 Signal선을 데드크로스 하향 이탈할 때.
+
+S3_Bollinger (볼린저 밴드 반등 & 스퀴즈 돌파 전략)
+- 파라미터: window=20, num_std=2.0
+- 지표: 20일 중심선(MB), 상한선(UB = MB + 2STD), 하한선(LB = MB - 2STD), 밴드폭(Bandwidth = (UB-LB)/MB).
+- 매수 조건: 다음 두 조건 중 하나 만족 시 매수 (A) 스퀴즈 돌파: 최근 20일 최저 밴드폭이 0.14 이하로 극심하게 수축 후, 당일 종가가 상한선(UB)을 강하게 상향 돌파. (B) 하한선 반등: 전일 종가가 하한선(LB) 이하로 하락한 후, 당일 양봉(close > open)으로 하한선 위로 반등.
+- 매도 조건: 당일 종가가 상한선(UB)에 도달하거나 상향 이탈 후 재진입 시 매도.
+
+S4_RSI_Overbought (RSI 과매도 탈출 전략)
+- 파라미터: rsi_period=14, oversold=30, overbought=70
+- 매수 조건: RSI(14)가 30 이하 과매도 구간에 들어갔다가 30 선을 위로 탈출할 때 (RSI > 30 및 전일 RSI <= 30).
+- 매도 조건: RSI(14)가 70 이상 과매수 구간에 진입할 때 (RSI >= 70).
+
+S5_Candle_Patterns (상승 반전 캔들 패턴 전략)
+- 매수 조건: (A) 당일 5% 이상 장대양봉 발생 OR (B) 망치형 캔들(아래꼬리가 몸통의 2배 이상) 발생 OR (C) 5일선 양봉 돌파 조건 만족 시 매수.
+- 매도 조건: 당일 -5% 이상 장대음봉 발생 OR 5일 이평선 하향 이탈 시 매도.
+
+
+[2. 백테스팅 시뮬레이터 파이프라인 (Strategy/run_all_combinations_simulation.py)]
+시뮬레이션 설정:
+- 기간: 20년 백테스트 (데이터베이스 내 전체 거래일자 대상)
+- S1, S1a, S1b, S1c, S2, S3, S4, S5 단일 전략
+- 복합전략: S1a + S2, S1a + S2 + S3
+
+
+복합 조합 매수 신호 조건: 조합 내 구성 전략 중 하나 이상에서 매수 신호 포착 시 매수 (OR 조건).
+성과 집계 및 트레이드 로그 기록:
+시뮬레이션 진행 동안 발생하는 모든 매수/매도 내역을 체결 수량, 단가, 보유일수, 개별 수익률(%), 손익금액(원), AI 상승확률과 함께 StrategyTradeLog 테이블에 객체로 생성하여 DB에 저장
+
+각 조합별로 20년 최종 자산(final_capital), 누적 수익률(total_return_pct), 매매 승률(win_rate_pct), 최대 낙폭(mdd_pct), 총 거래 횟수(total_trades)를 계산하여 성과 결과를 리턴
