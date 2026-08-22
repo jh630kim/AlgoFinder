@@ -49,7 +49,7 @@
 
 -----------------------------------------------------------
 [Step 3: 퀀트 전략 및 백테스팅 엔진 작성] 
-
+<<<< 재검토 필요 >>>
 각 전략 모듈은 판다스(Pandas) 및 넘파이(Numpy)를 활용해 지표를 계산하고, 매수 신호(signal_buy)와 매도 신호(signal_sell)를 포함하는 데이터프레임을 반환해야 함.
 
 
@@ -114,3 +114,35 @@ S5_Candle_Patterns (상승 반전 캔들 패턴 전략)
 시뮬레이션 진행 동안 발생하는 모든 매수/매도 내역을 체결 수량, 단가, 보유일수, 개별 수익률(%), 손익금액(원), AI 상승확률과 함께 StrategyTradeLog 테이블에 객체로 생성하여 DB에 저장
 
 각 조합별로 20년 최종 자산(final_capital), 누적 수익률(total_return_pct), 매매 승률(win_rate_pct), 최대 낙폭(mdd_pct), 총 거래 횟수(total_trades)를 계산하여 성과 결과를 리턴
+
+---------------------------------------
+<<<< 미검토 >>>
+[Step 4: Flask 웹 백엔드 (app.py) 개발] 네 번째 단계로 Flask 백엔드 애플리케이션 app.py를 완성해줘.
+
+포함되어야 할 기능:
+
+페이지 라우트: / (메인), /recommendation (AI추천), /backtest (백테스트), /proposal (제안서)
+API 엔드포인트:
+/api/search-stock: 종목코드/종목명 자동완성 검색
+/api/stock-chart/: 해당 종목의 OHLCV + 수급(외국인/기관/연기금) 데이터 JSON 반환
+/api/top-investor-trading: 외국인/기관/연기금 순매수 상위 TOP 20 종목
+/api/market-indices: 코스피/코스닥/S&P500/환율 지수
+/api/recommended-stocks: S1c, S2, S3, S1a, S1b 각 전략별 포착 종목 & AI 상승확률/손익비 API
+/api/backtest-leaderboard: 백테스트 리더보드 및 트레이드 로그 API
+SQLAlchemy 쿼리를 최적화하여 작성해줘.
+
+[Step 5: 프론트엔드 스타일 및 자바스크립트 작성] 다섯 번째 단계로 프론트엔드 CSS 디자인 시스템과 JS 스크립트를 작성해줘.
+
+static/css/style.css:
+Dark Glassmorphism 스타일 (#0d1117, 반투명 카드, 골드/네온 그린 포인트 칼라, CSS 그리드 및 Flexbox, 반응형 웹).
+static/js/app.js:
+종목 자동완성 검색, 지수 티커 업데이트, API 렌더링, 탭 전환, 리더보드 모달 제어 logic.
+static/js/chart.js:
+Chart.js 라이브러리를 활용하여 상단 주가 캔들/종가 차트 + 하단 외국인/기관/연기금/개인 순매수 막대/라인 서브 차트 동시 렌더링 logic.
+[Step 6: HTML 템플릿 4종 구현] 마지막 단계로 웹 대시보드 HTML 템플릿 4개를 작성해줘:
+
+templates/index.html: 메인 대시보드 (검색창, 시장지수 틱, 주가/수급 듀얼 차트, 외인/기관 순매수 TOP 20 테이블)
+templates/recommendation.html: AI 추천실 (전략 S1c, S2, S3 등 탭별 매수 포착 카드, AI 상승확률, 목표가/손절가 정보)
+templates/backtest.html: 백테스트 분석실 (31개 전략 성과 리더보드, 누적 수익률 그래프, 매매일지 모달)
+templates/proposal.html: 퀀트 알고리즘 소개 및 백테스팅 엔진 기획서 문맥
+앞서 작성한 style.css, app.js, chart.js와 정확히 연동되도록 완성해줘.

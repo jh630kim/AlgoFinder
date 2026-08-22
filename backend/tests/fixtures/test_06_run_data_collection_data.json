@@ -2,6 +2,7 @@
   "test_01_run_pipeline_incremental": {
     "input": {
       "mode": "incremental",
+      "stage": "all",
       "start_date": "20260102",
       "end_date": "20260102"
     },
@@ -12,6 +13,18 @@
   "test_02_run_pipeline_full": {
     "input": {
       "mode": "full",
+      "stage": "all",
+      "start_date": "20260102",
+      "end_date": "20260102"
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  "test_03_run_pipeline_stage1": {
+    "input": {
+      "mode": "incremental",
+      "stage": "1",
       "start_date": "20260102",
       "end_date": "20260102"
     },

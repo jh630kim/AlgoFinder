@@ -2,15 +2,25 @@
 통합 데이터 수집 실행 모듈 (run_data_collection.py).
 
 전체 데이터 수집 파이프라인을 스마트 증분(Incremental) 또는 전체(Full) 모드로 선택 실행합니다:
-1단계: StockMasterCollector ➔ 전 증시 종목 마스터(all_stock_master) 및 타깃 종목(target_stocks) 동기화
-2단계: MarketIndicesCollector ➔ 주요 시장 지수 및 환율(market_indices_daily: KOSPI, KOSDAQ, S&P500, USD/KRW) 적재
-3단계: MarketDataCollector ➔ 타깃 종목 일별 수급/OHLCV(investor_trading_daily) 적재 및 실행 로그(sync_logs) 저장
+1단계: StockMasterCollector ➔ 전 증시 종목 마스터(all_stock_master) 및 타깃 종목(target_stocks) 동기화 (KOSPI200/KOSDAQ150/미국ETF 350개+)
+2단계: MarketIndicesCollector ➔ 주요 시장 지수 및 환율(market_indices_daily: KOSPI, KOSDAQ, S&P500, USD/KRW) 적재 (기본 20050101~)
+3단계: MarketDataCollector ➔ 타깃 종목 일별 수급/OHLCV(investor_trading_daily) 적재 및 실행 로그(sync_logs) 저장 (기본 20050101~)
 """
 
 import sys
 import argparse
 import logging
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# .env 환경 변수를 os.environ에 자동 로드 (pykrx 세션 초기화 전)
+load_dotenv()
+
+# PyKRX 로깅 원천 패치
+import pykrx.website.comm.util as pykrx_util
+pykrx_util.logging.info = lambda *args, **kwargs: None
+logging.getLogger("pykrx").setLevel(logging.ERROR)
+
 from backend.app.core.database import db_manager
 from backend.app.services.stock_master_collector import StockMasterCollector
 from backend.app.services.market_indices_collector import MarketIndicesCollector
@@ -25,22 +35,26 @@ logging.basicConfig(
 logger = logging.getLogger("run_data_collection")
 
 
-def run_pipeline(mode: str = "incremental", start_date: str = None, end_date: str = None) -> None:
+def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str = None, end_date: str = None) -> None:
     """
-    1단계~3단계 통합 데이터 수집 파이프라인을 지정된 모드로 실행합니다.
+    1단계~3단계 통합 데이터 수집 파이프라인을 지정된 모드 및 단계별로 선택 실행합니다.
 
     :param mode: 수집 모드 ('incremental': 미수집 신규 일자만 스마트 수집, 'full': 전체 기간 덮어쓰기)
-    :param start_date: 수집 시작일자 (YYYYMMDD)
-    :param end_date: 수집 종료일자 (YYYYMMDD)
+    :param stage: 수집 단계 선택 ('all': 전체 1~3단계, '1': 1단계 마스터, '2': 2단계 지수/환율, '3': 3단계 타깃 수급/OHLCV)
+    :param start_date: 수집 시작일자 (YYYYMMDD, 미지정 시 20050101부터)
+    :param end_date: 수집 종료일자 (YYYYMMDD, 미지정 시 오늘까지)
     """
     is_incremental = (mode.lower() == "incremental")
+    stage_str = str(stage).lower()
     today_dt = datetime.now()
     if not end_date:
         end_date = today_dt.strftime("%Y%m%d")
+    if not start_date:
+        start_date = "20050101"  # 사용자 요청: 2005년 1월 1일부터 수집
 
     logger.info("==================================================")
-    logger.info(f"🚀 AlgoFinder 통합 데이터 수집 파이프라인 시작 [{mode.upper()} 모드]")
-    logger.info(f"⚙️ 옵션: 증분수집={is_incremental}, 기간={start_date or 'DB최신/1년전'} ~ {end_date}")
+    logger.info(f"🚀 AlgoFinder 통합 데이터 수집 파이프라인 시작 [{mode.upper()} 모드 | STAGE={stage_str}]")
+    logger.info(f"⚙️ 옵션: 증분수집={is_incremental}, 실행단계={stage_str}, 수집대상 기간={start_date} ~ {end_date}")
     logger.info("==================================================")
 
     # DB 테이블 생성 보장
@@ -51,49 +65,52 @@ def run_pipeline(mode: str = "incremental", start_date: str = None, end_date: st
         # ----------------------------------------------------
         # 1단계: 종목 마스터 및 타깃 종목 목록 동기화
         # ----------------------------------------------------
-        logger.info("\n[1단계] 종목 마스터 & 타깃 종목 수집 시작...")
-        master_collector = StockMasterCollector(session)
-        stage1_res = master_collector.run_sync()
-        logger.info(
-            f"  └─ ✅ [1단계 완료] KRX 전 종목 마스터 {stage1_res.get('total_fetched')}개 수집 "
-            f"(마스터 {stage1_res.get('master_saved')}건 적재, 타깃 종목 {stage1_res.get('targets_saved')}개 동기화 완료)"
-        )
+        if stage_str in ["all", "1"]:
+            logger.info("\n[1단계] 종목 마스터 & 타깃 종목 수집 시작...")
+            master_collector = StockMasterCollector(session)
+            stage1_res = master_collector.run_sync()
+            logger.info(
+                f"  └─ ✅ [1단계 완료] KRX 전 종목 마스터 {stage1_res.get('total_fetched')}개 수집 "
+                f"(마스터 {stage1_res.get('master_saved')}건 적재, 타깃 종목 {stage1_res.get('targets_saved')}개 동기화 완료)"
+            )
 
         # ----------------------------------------------------
         # 2단계: 주요 지수 및 환율 데이터 적재
         # ----------------------------------------------------
-        logger.info(f"\n[2단계] 주요 시장 지수 및 환율 수집 시작 [{mode.upper()} 모드]...")
-        indices_collector = MarketIndicesCollector(session)
-        stage2_res = indices_collector.collect_market_indices(
-            start_date=start_date,
-            end_date=end_date,
-            incremental=is_incremental
-        )
-        if stage2_res.get("skipped"):
-            logger.info("  └─ ➔ 지수/환율 데이터가 이미 최신 상태이므로 수집을 건너뛰었습니다.")
-        else:
-            logger.info(
-                f"  └─ ✅ [2단계 완료] 지수/환율 수집 완료 "
-                f"({stage2_res.get('fetched_count')}일 치 {stage2_res.get('saved_count')}건 DB 적재 완료)"
+        if stage_str in ["all", "2"]:
+            logger.info(f"\n[2단계] 주요 시장 지수 및 환율(KOSPI, KOSDAQ, S&P500, USD/KRW) 수집 시작 [{mode.upper()} 모드]...")
+            indices_collector = MarketIndicesCollector(session)
+            stage2_res = indices_collector.collect_market_indices(
+                start_date=start_date,
+                end_date=end_date,
+                incremental=is_incremental
             )
+            if stage2_res.get("skipped"):
+                logger.info("  └─ ➔ 지수/환율 데이터가 이미 최신 상태이므로 수집을 건너뛰었습니다.")
+            else:
+                logger.info(
+                    f"  └─ ✅ [2단계 완료] 지수/환율 수집 완료 "
+                    f"({stage2_res.get('fetched_count')}일 치 {stage2_res.get('saved_count')}건 DB 적재 완료)"
+                )
 
         # ----------------------------------------------------
         # 3단계: 타깃 종목 일별 수급/OHLCV 및 SyncLogs 적재
         # ----------------------------------------------------
-        logger.info(f"\n[3단계] 타깃 종목 일별 수급 및 OHLCV 데이터 수집 시작 [{mode.upper()} 모드]...")
-        market_data_collector = MarketDataCollector(session)
-        stage3_res = market_data_collector.collect_target_market_data(
-            start_date=start_date,
-            end_date=end_date,
-            incremental=is_incremental
-        )
+        if stage_str in ["all", "3"]:
+            logger.info(f"\n[3단계] 타깃 종목 일별 수급 및 OHLCV 데이터 수집 시작 [{mode.upper()} 모드]...")
+            market_data_collector = MarketDataCollector(session)
+            stage3_res = market_data_collector.collect_target_market_data(
+                start_date=start_date,
+                end_date=end_date,
+                incremental=is_incremental
+            )
+            logger.info(
+                f"  └─ ✅ [3단계 완료] 타깃 {stage3_res.get('target_symbols_count')}개 종목 중 "
+                f"적재 {stage3_res.get('total_records_saved')}건 완료 (건너뀀 {stage3_res.get('skipped_symbols_count')}개)"
+            )
 
         logger.info("\n==================================================")
-        logger.info(f"🎉 전체 3단계 수집 파이프라인 완료 [{mode.upper()} 모드]")
-        logger.info(
-            f"📊 통계: 총 타깃 {stage3_res.get('target_symbols_count')}개 종목 중 "
-            f"적재 {stage3_res.get('total_records_saved')}건, 이미 최신이라 건너뀀 {stage3_res.get('skipped_symbols_count')}개 종목"
-        )
+        logger.info(f"🎉 데이터 수집 파이프라인 완료 [{mode.upper()} 모드 | STAGE={stage_str}]")
         logger.info("==================================================")
 
     except Exception as e:
@@ -110,8 +127,15 @@ if __name__ == "__main__":
         default="incremental",
         help="수집 모드 선택 ('incremental': 스마트 증분 수집, 'full': 전체 기간 덮어쓰기)"
     )
-    parser.add_argument("--start", help="시작일자 (YYYYMMDD)")
+    parser.add_argument(
+        "--stage",
+        "-s",
+        choices=["all", "1", "2", "3"],
+        default="all",
+        help="수집 단계 선택 ('all': 전체 1~3단계, '1': 1단계 마스터, '2': 2단계 지수/환율, '3': 3단계 타깃 수급/OHLCV)"
+    )
+    parser.add_argument("--start", default="20050101", help="시작일자 (YYYYMMDD, 기본값: 20050101)")
     parser.add_argument("--end", help="종료일자 (YYYYMMDD)")
 
     args = parser.parse_args()
-    run_pipeline(mode=args.mode, start_date=args.start, end_date=args.end)
+    run_pipeline(mode=args.mode, stage=args.stage, start_date=args.start, end_date=args.end)

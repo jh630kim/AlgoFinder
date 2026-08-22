@@ -34,7 +34,7 @@ class MarketIndicesCollector:
         self, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
         """
-        지정 기간 동안의 KOSPI, KOSDAQ, S&P500, USD/KRW 일별 데이터를 수집하여 병합합니다.
+        지정 기간 동안의 KOSPI 개장일 기준으로 KOSPI, KOSDAQ, S&P500, USD/KRW 일별 데이터를 수집하여 병합합니다.
 
         :param start_date: 시작일자 (YYYYMMDD)
         :param end_date: 종료일자 (YYYYMMDD)
@@ -46,29 +46,30 @@ class MarketIndicesCollector:
             sp500_df = fdr.DataReader("US500", start_date, end_date)
             usdkrw_df = fdr.DataReader("USD/KRW", start_date, end_date)
 
-            dates = set()
-            for df in [kospi_df, kosdaq_df, sp500_df, usdkrw_df]:
-                if not df.empty:
-                    dates.update([d.strftime("%Y%m%d") for d in df.index])
+            if kospi_df.empty:
+                return []
 
-            sorted_dates = sorted(list(dates))
+            # KOSPI 종가가 존재하는 한국 증시 개장일(영업일)만 추출
+            valid_kospi_df = kospi_df.dropna(subset=["Close"]) if "Close" in kospi_df.columns else kospi_df
+            sorted_dates = sorted([d.strftime("%Y%m%d") for d in valid_kospi_df.index])
             records = []
 
             for d_str in sorted_dates:
                 dt_key = pd.to_datetime(d_str)
 
-                kospi_val = float(kospi_df.loc[dt_key, "Close"]) if dt_key in kospi_df.index and "Close" in kospi_df.columns else None
-                kosdaq_val = float(kosdaq_df.loc[dt_key, "Close"]) if dt_key in kosdaq_df.index and "Close" in kosdaq_df.columns else None
-                sp500_val = float(sp500_df.loc[dt_key, "Close"]) if dt_key in sp500_df.index and "Close" in sp500_df.columns else None
-                usdkrw_val = float(usdkrw_df.loc[dt_key, "Close"]) if dt_key in usdkrw_df.index and "Close" in usdkrw_df.columns else None
+                kospi_val = float(kospi_df.loc[dt_key, "Close"]) if dt_key in kospi_df.index and "Close" in kospi_df.columns and pd.notna(kospi_df.loc[dt_key, "Close"]) else None
+                kosdaq_val = float(kosdaq_df.loc[dt_key, "Close"]) if dt_key in kosdaq_df.index and "Close" in kosdaq_df.columns and pd.notna(kosdaq_df.loc[dt_key, "Close"]) else None
+                sp500_val = float(sp500_df.loc[dt_key, "Close"]) if dt_key in sp500_df.index and "Close" in sp500_df.columns and pd.notna(sp500_df.loc[dt_key, "Close"]) else None
+                usdkrw_val = float(usdkrw_df.loc[dt_key, "Close"]) if dt_key in usdkrw_df.index and "Close" in usdkrw_df.columns and pd.notna(usdkrw_df.loc[dt_key, "Close"]) else None
 
-                records.append({
-                    "date": d_str,
-                    "kospi_close": kospi_val,
-                    "kosdaq_close": kosdaq_val,
-                    "sp500_close": sp500_val,
-                    "usdkrw_rate": usdkrw_val
-                })
+                if kospi_val is not None:
+                    records.append({
+                        "date": d_str,
+                        "kospi_close": kospi_val,
+                        "kosdaq_close": kosdaq_val,
+                        "sp500_close": sp500_val,
+                        "usdkrw_rate": usdkrw_val
+                    })
 
             return records
         except Exception as e:

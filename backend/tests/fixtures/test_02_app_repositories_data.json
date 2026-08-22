@@ -7,7 +7,7 @@
             "code": "005930",
             "name": "삼성전자",
             "market": "KOSPI",
-            "dept": "중견기업부",
+            "industry": "반도체와반도체장비",
             "sector": "KOSPI 200",
             "marcap": 400000000000000,
             "stocks": 5969782550
@@ -16,7 +16,7 @@
             "code": "000660",
             "name": "SK하이닉스",
             "market": "KOSPI",
-            "dept": "대기업부",
+            "industry": "반도체와반도체장비",
             "sector": "KOSPI 200",
             "marcap": 100000000000000,
             "stocks": 728002365

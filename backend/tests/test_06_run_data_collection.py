@@ -73,7 +73,7 @@ class Test06RunDataCollection(unittest.TestCase):
             MockMarketData.return_value.collect_target_market_data.return_value = mock_stage3
 
             # 파이프라인 실행
-            run_pipeline(mode=inp["mode"], start_date=inp["start_date"], end_date=inp["end_date"])
+            run_pipeline(mode=inp["mode"], stage=inp.get("stage", "all"), start_date=inp["start_date"], end_date=inp["end_date"])
             actual_status = "SUCCESS"
             print(f"\n[run_pipeline(incremental) | 입력값: {inp} | 예상상태: {data['expected']['status']} | 실제: {actual_status}]")
             self.assertEqual(actual_status, data["expected"]["status"])
@@ -97,10 +97,32 @@ class Test06RunDataCollection(unittest.TestCase):
             MockMarketData.return_value.collect_target_market_data.return_value = mock_stage3
 
             # 파이프라인 실행
-            run_pipeline(mode=inp["mode"], start_date=inp["start_date"], end_date=inp["end_date"])
+            run_pipeline(mode=inp["mode"], stage=inp.get("stage", "all"), start_date=inp["start_date"], end_date=inp["end_date"])
             actual_status = "SUCCESS"
             print(f"[run_pipeline(full) | 입력값: {inp} | 예상상태: {data['expected']['status']} | 실제: {actual_status}]")
             self.assertEqual(actual_status, data["expected"]["status"])
+
+    def test_03_run_pipeline_stage1(self) -> None:
+        """[6-3번 테스트] run_pipeline 1단계 단독 실행 검증."""
+        data = self.fixtures["test_03_run_pipeline_stage1"]
+        inp = data["input"]
+        self.assert_parameters_complete(run_pipeline, inp)
+
+        mock_stage1 = {"total_fetched": 1, "master_saved": 1, "targets_saved": 1}
+
+        with patch("run_data_collection.StockMasterCollector") as MockMaster, \
+             patch("run_data_collection.MarketIndicesCollector") as MockIndices, \
+             patch("run_data_collection.MarketDataCollector") as MockMarketData:
+
+            MockMaster.return_value.run_sync.return_value = mock_stage1
+
+            run_pipeline(mode=inp["mode"], stage=inp.get("stage", "1"), start_date=inp["start_date"], end_date=inp["end_date"])
+            actual_status = "SUCCESS"
+            print(f"[run_pipeline(stage1) | 입력값: {inp} | 예상상태: {data['expected']['status']} | 실제: {actual_status}]")
+            self.assertEqual(actual_status, data["expected"]["status"])
+            # 1단계만 실행되었으므로 2, 3단계 Collector는 호출되지 않음
+            MockIndices.return_value.collect_market_indices.assert_not_called()
+            MockMarketData.return_value.collect_target_market_data.assert_not_called()
 
 
 if __name__ == "__main__":

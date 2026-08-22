@@ -14,19 +14,25 @@
           "code": "005930",
           "name": "삼성전자",
           "market": "KOSPI",
-          "sector": "KOSPI 200"
+          "industry": "반도체와반도체장비",
+          "marcap": 400000000000000,
+          "sector": "일반"
         },
         {
           "code": "371160",
           "name": "TIGER 미국나스닥100",
           "market": "ETF",
-          "sector": "ETF"
+          "industry": "지수추종",
+          "marcap": 1000000000000,
+          "sector": "일반"
         },
         {
           "code": "000010",
           "name": "일반종목",
-          "market": "KOSPI",
-          "sector": "기타"
+          "market": "KONEX",
+          "industry": "기타",
+          "marcap": 100,
+          "sector": "일반"
         }
       ]
     },

@@ -21,13 +21,13 @@ class InvestorTradingDaily(Base):
     # 일자 (YYYYMMDD 또는 YYYY-MM-DD) (Composite PK)
     date = Column(String(10), primary_key=True, index=True, comment="일자")
 
-    # 주체별 순매수 금액 (원)
-    personal_net_buy = Column(BigInteger, default=0, comment="개인 순매수(원)")
-    foreigner_net_buy = Column(BigInteger, default=0, comment="외국인 순매수(원)")
-    institution_net_buy = Column(BigInteger, default=0, comment="기관 순매수(원)")
-    pension_net_buy = Column(BigInteger, default=0, comment="연기금 순매수(원)")
-    financial_net_buy = Column(BigInteger, default=0, comment="금융투자 순매수(원)")
-    other_corp_net_buy = Column(BigInteger, default=0, comment="기타법인 순매수(원)")
+    # 주체별 순매수 금액 (원) - 수급 미제공 시 NULL 적재 지원
+    personal_net_buy = Column(BigInteger, nullable=True, default=None, comment="개인 순매수(원)")
+    foreigner_net_buy = Column(BigInteger, nullable=True, default=None, comment="외국인 순매수(원)")
+    institution_net_buy = Column(BigInteger, nullable=True, default=None, comment="기관 순매수(원)")
+    pension_net_buy = Column(BigInteger, nullable=True, default=None, comment="연기금 순매수(원)")
+    financial_net_buy = Column(BigInteger, nullable=True, default=None, comment="금융투자 순매수(원)")
+    other_corp_net_buy = Column(BigInteger, nullable=True, default=None, comment="기타법인 순매수(원)")
 
     # OHLCV 가격 및 거래량
     close_price = Column(Float, nullable=False, comment="종가(원)")

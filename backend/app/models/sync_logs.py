@@ -6,7 +6,7 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime
 from backend.app.core.database import Base
 
 
@@ -30,6 +30,9 @@ class SyncLogs(Base):
 
     # 실행 상태 (SUCCESS / FAILED)
     status = Column(String(20), nullable=False, default="SUCCESS", comment="상태")
+    # 소요 시간 (초 및 가독형 시/분/초 표현)
+    elapsed_seconds = Column(Float, default=0.0, comment="소요시간(초)")
+    elapsed_time_str = Column(String(50), nullable=True, comment="소요시간 표현")
     # 등록 일시
     created_at = Column(DateTime, default=datetime.utcnow, comment="등록일시")
 

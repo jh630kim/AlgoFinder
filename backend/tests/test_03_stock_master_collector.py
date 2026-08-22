@@ -76,9 +76,10 @@ class Test03StockMasterCollector(unittest.TestCase):
         collector = StockMasterCollector(self.session)
         self.assert_parameters_complete(collector.filter_target_symbols, data["input"])
 
-        res = collector.filter_target_symbols(data["input"]["items"])
-        print(f"[StockMasterCollector.filter_target_symbols | 입력값: {data['input']} | 예상목록: {data['expected']['target_symbols']} | 실제: {res}]")
-        self.assertEqual(res, data["expected"]["target_symbols"])
+        with patch.object(collector, "_fetch_index_constituents", side_effect=lambda ticker: ["005930"] if ticker == "1028" else []):
+            res = collector.filter_target_symbols(data["input"]["items"])
+            print(f"[StockMasterCollector.filter_target_symbols | 입력값: {data['input']} | 예상목록: {data['expected']['target_symbols']} | 실제: {res}]")
+            self.assertEqual(res, data["expected"]["target_symbols"])
 
     def test_03_run_sync(self) -> None:
         """[3-3번 테스트] run_sync 동기화 파이프라인 검증."""

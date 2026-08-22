@@ -1,0 +1,167 @@
+[프로젝트: AlgoFinder - 국내 주식 수급 분석 및 퀀트 백테스팅 시스템]
+
+아래 요구사항 및 제공된 설계 파일(`AI 코딩 규칙.txt`, `db_schema.csv`)을 엄격히 준수하여 코드를 생략(placeholder, TODO) 없이 전체 구현
+
+---
+
+### [Step 1: 환경 설정, 데이터베이스 스키마 및 Repository 레이어 구현] (개발 및 검증 완료)
+
+1. **의존성 설정 (`requirements.txt`)**
+   - FastAPI, Flask, SQLAlchemy, Pydantic, FinanceDataReader, PyKRX, Pandas, NumPy, requests 등 프로젝트에 필요한 최신 라이브러리 설정 완료.
+
+2. **Core 설정 (`backend/app/core/`)**
+   - `config.py`: SQLite DB 경로 (`data/app.db`) 및 시스템 환경 변수 관리.
+   - `database.py`: SQLAlchemy Engine, `sessionmaker`, Base 클래스 및 `db_manager` (데이터베이스 세션 관리자) 구현.
+   - `init_db.py`: 스키마 동기화 및 DB 테이블 자동 생성 스크립트 구축.
+
+3. **데이터 모델 (`backend/app/models/`)**
+   `db_schema.csv` 및 확장 규격을 준수하여 SQLAlchemy ORM 모델 구현 완료:
+   - `AllStockMaster`: 전 증시 종목 마스터 (code, name, market, industry, sector, marcap, stocks).
+   - `TargetStocks`: 분석 대상 632개 타깃 종목 리스트 (symbol).
+   - `InvestorTradingDaily`: 일자별 종목 수급 및 OHLCV 가격 데이터 (symbol, date, open_price, high_price, low_price, close_price, volume, personal_net_buy, foreigner_net_buy, institution_net_buy, pension_net_buy, financial_net_buy, other_corp_net_buy). 수급 미제공 시 `NULL` (None) 저장 지원.
+   - `MarketIndexDaily`: 주요 지수 및 환율 (date, kospi_close, kosdaq_close, sp500_close, usdkrw_rate). 한국 증시 KOSPI 개장일만 엄격 필터링 저장.
+   - `SyncLog`: 데이터 수집/동기화 실행 로그 (sync_date, total_count, kospi_count, kosdaq_count, etf_count, etn_count, status, **elapsed_seconds**, **elapsed_time_str**). 총 진행 소요시간(초 및 가독형 시/분/초) 자동 기록 기능 반영 완료.
+   - `StrategyLeaderboard`: 31개 퀀트 전략 백테스트 성과 리더보드 모델.
+   - `StrategyTradeLog`: 백테스트 개별 체결 및 매매일지 모델.
+
+4. **Repository 레이어 (`backend/app/repositories/`)**
+   - `stock_master_repository.py`: StockMasterRepository (bulk_upsert, get_all, get_by_code).
+   - `target_stocks_repository.py`: TargetStocksRepository (sync_targets, get_all_symbols).
+   - `market_data_repository.py`: MarketDataRepository (bulk_upsert, get_by_symbol_and_date, get_max_date).
+   - `market_indices_repository.py`: MarketIndicesRepository (bulk_upsert, get_by_date, get_max_date).
+   - `sync_log_repository.py`: SyncLogRepository (create_log, get_latest_log).
+   - `test_01_app_core_models.py` 및 `test_02_app_repositories.py` 단위 테스트 100% 통과 완료.
+
+-----------------------------------------------------------
+
+### [Step 2: 데이터 수집기(Collector) 및 파이프라인 구현] (개발 및 검증 완료)
+
+`AI 코딩규칙.txt`의 디렉토리 구조 및 모듈화 원칙을 준수하여 3단계 데이터 수집 파이프라인 구축 완료:
+
+1. **종목 마스터 수집 (`backend/app/services/stock_master_collector.py`)**
+   - `FinanceDataReader`를 사용하여 KRX 전체 4,034개 종목 마스터를 DB(`AllStockMaster`)에 동기화.
+   - KOSPI 200 (200개), KOSDAQ 150 (150개), 미국 관련 ETF (282개) 등 **총 632개 우량 종목만 필터링하여 `TargetStocks`에 타깃 동기화 완료**.
+
+2. **일별 지수 수집 (`backend/app/services/market_indices_collector.py`)**
+   - KOSPI, KOSDAQ, S&P500, USD/KRW 환율 수집. KOSPI 휴장일을 자동 제외하여 한국 증시 개장일만 동기화.
+
+3. **일별 수급 및 OHLCV 수집 (`backend/app/services/market_data_collector.py`)**
+   - **네이버 금융 웹 스크래핑 (`frgn.naver`) & `fchart` XML API 기술 결합**:
+     - `fchart` XML API(`count=6000`)를 통해 **2005년부터 2026년까지 20년 치 시가/고가/저가/종가/거래량(OHLCV)을 단 1번의 요청(0.05초)으로 100% 수집**하여 `open_price = 0` 현상 원천 방지 및 Post-Split 수정주가 동기화.
+     - `frgn.naver` 350페이지 HTML 수급 파서를 통해 **2005년 1월 3일~현재까지 20년 치 기관/외국인/개인 주체별 순매수 수급 금액 수집**.
+     - `0000D0`와 같이 알파벳 포함 특수 종목까지 100% 정상 수급 & OHLCV 수집 지원.
+     - 수급 미제공 데이터 및 특수 날짜는 `NULL` (None) 적재.
+     - **스마트 증분 수집 (`incremental=True`)**: DB의 최근 저장 일자 감지 시 단 1~2페이지만 읽고 종목당 0.05초 완료 (전체 632개 종목 30초~1분 완료).
+     - **소요 시간 기록**: 수집 완료 후 총 소요시간(`elapsed_seconds`, `elapsed_time_str`)을 `SyncLog`에 기록.
+
+4. **통합 파이프라인 CLI 파이프라인 (`run_data_collection.py`)**
+   - `--mode full / incremental`, `--stage 1 / 2 / 3 / all` 옵션 지원 CLI 스크립트 작성 완료.
+   - `test_03` ~ `test_06` 수집기 전 범위 단위 테스트 100% 통과 완료.
+
+-----------------------------------------------------------
+[Step 3: 퀀트 전략 및 백테스팅 엔진 작성] (진행중 - Step 3.1 완료 / Step 3.2 예정)
+
+1. **8개 퀀트 매매 전략 모듈 패키지 구축 (`backend/app/services/strategies/`)**
+   - **`base_strategy.py`**: 추상 클래스 `BaseStrategy` 및 지표 연산 헬퍼 함수 구현 완료.
+     - `calc_sma`: 이동평균선 산출
+     - `calc_volume_sma`: 거래량 이동평균선 산출
+     - `calc_rsi`: RSI(14) 및 Signal(9) 지표 산출
+     - `calc_bollinger`: 볼린저 밴드(MB, UB, LB, Bandwidth) 산출
+     - `calc_investor_z_score`: 외국인/기관/개인 주체별 순매수 수급 금액 Z-Score 요인 산출 ($Z_{\text{investor}}$)
+     - `calc_sigmoid_prob`: 핵심지표 + 수급지표 결합 시그모이드 S-Curve 확신 확률 연산 엔진 ($10.0\% \sim 90.0\%$)
+
+   [상세 전략별 구현 및 수식 명세]
+
+   - **S1_MA_Cross (이동평균선 골든크로스 전략)**
+     - 파라미터: short_window=5, long_window=20, trend_window=60
+     - 매수 조건: 5일 종가 이평선(sma5)이 20일 종가 이평선(sma20)을 위로 뚫는 골든크로스 발생 (sma5 > sma20 및 전일 sma5 <= sma20) AND 주가가 60일 이평선(sma60) 위에 위치 (정배열 추세).
+     - 매도 조건: 5일선이 20일선을 아래로 뚫는 데드크로스 발생 (sma5 < sma20 및 전일 sma5 >= sma20).
+
+   - **S1a_MA_Cross_Volume (거래량 150% 동반 이평 돌파 전략)**
+     - 파라미터: short_window=5, long_window=20, vol_mult=1.5
+     - 매수 조건: S1_MA_Cross의 매수 AND 당일 거래량이 5일 거래량 이평선(vol_sma5)의 150% 이상 (volume >= vol_sma5 * 1.5).
+     - 매도 조건: S1_MA_Cross 매도 OR (당일 음봉 close < open AND 거래량이 5일 거래량 이평의 150% 이상 폭발).
+     ※ 참고: S1_MA_Cross의 매수/매도 시그널 로직은 반드시 S1_MA_Cross 클래스의 메서드로 캡슐화하여 호출.
+
+   - **S1b_MA_Cross_Legacy (레거시 확률 수식 연동 전략)**
+     - 파라미터: short_window=5, long_window=20
+     - 매수 조건: S1_MA_Cross의 매수 신호 발생 시 상승 확률이 55% 이상일 때 매수 (prob_up >= 55.0).
+     - 매도 조건: S1_MA_Cross의 매도 신호.
+     ※ 참고: S1_MA_Cross의 매수/매도 시그널 로직은 반드시 S1_MA_Cross 클래스의 메서드로 캡슐화하여 호출.
+
+   - **S1c_MA_Cross_Adaptive (20일선 추세 적응형 듀얼 전략)**
+     - 파라미터: short_window=5, long_window=20
+     - 추세 판단: 20일선이 3일 전 대비 상승 중인 경우 (sma20 > sma20.shift(3)) -> 상승 추세 / 이하 -> 하락 및 횡보 추세.
+     - 매수/매도 로직:
+       - 상승 추세일 때: S1b 추세 추종 방식 적용
+       - 하락 및 횡보 추세일 때: S1a 거래량 필터 방식 적용
+     ※ 참고: 매수/매도 시그널 로직은 S1a, S1b 클래스의 메서드로 캡슐화하여 호출.
+
+   - **S2_Breakout (RSI 및 이격도 돌파 전략)**
+     - 파라미터: rsi_period=14, signal_period=9
+     - 지표: 14일 RSI 및 RSI 9일 이평선(Signal), 5일 최저 RSI.
+     - 매수 조건: RSI가 Signal선을 골든크로스 (RSI > Signal 및 전일 RSI <= Signal) AND 최근 5일 최저 RSI가 45 이하로 눌림목을 형성한 후 반등할 때.
+     - 매도 조건: RSI가 70 이상 과매수 구간 진입 후 Signal선을 데드크로스 하향 이탈할 때.
+
+   - **S3_Bollinger (볼린저 밴드 반등 & 스퀴즈 돌파 전략)**
+     - 파라미터: window=20, num_std=2.0
+     - 지표: 20일 중심선(MB), 상한선(UB = MB + 2STD), 하한선(LB = MB - 2STD), 밴드폭(Bandwidth = (UB-LB)/MB).
+     - 매수 조건: 다음 두 조건 중 하나 만족 시 매수 (A) 스퀴즈 돌파: 최근 20일 최저 밴드폭이 0.14 이하로 극심하게 수축 후, 당일 종가가 상한선(UB)을 강하게 상향 돌파. (B) 하한선 반등: 전일 종가가 하한선(LB) 이하로 하락한 후, 당일 양봉(close > open)으로 하한선 위로 반등.
+     - 매도 조건: 당일 종가가 상한선(UB)에 도달하거나 상향 이탈 후 재진입 시 매도.
+
+   - **S4_RSI_Overbought (RSI 과매도 탈출 전략)**
+     - 파라미터: rsi_period=14, oversold=30, overbought=70
+     - 매수 조건: RSI(14)가 30 이하 과매도 구간에 들어갔다가 30 선을 위로 탈출할 때 (RSI > 30 및 전일 RSI <= 30).
+     - 매도 조건: RSI(14)가 70 이상 과매수 구간에 진입할 때 (RSI >= 70).
+
+   - **S5_Candle_Patterns (상승 반전 캔들 패턴 전략)**
+     - 매수 조건: (A) 당일 5% 이상 장대양봉 발생 OR (B) 망치형 캔들(아래꼬리가 몸통의 2배 이상) 발생 OR (C) 5일선 양봉 돌파 조건 만족 시 매수.
+     - 매도 조건: 당일 -5% 이상 장대음봉 발생 OR 5일 이평선 하향 이탈 시 매도.
+
+   - **`전략설명서.txt`**: 8개 전략별 매수/매도 수식, 파라미터 규격 및 시그모이드 확률 수식 기술 명세서 작성 완료.
+
+2. **개별 단위 테스트 및 StockInfo 1:1 대조 무결성 검증 완료 (`backend/tests/test_07_strategy_engine.py`)**
+   - **120일 시계열 픽스처 데이터 구축 (`test_07_strategy_engine_data.json`)**:
+     - 삼성전자(`005930`) 최근 120일 시계열 데이터(2025-08-18 ~ 2026-02-12) 독립 JSON 픽스처 파일 분리 구축 완료 (60일선 이평선 연산 유효 구간 60일 완벽 확보).
+   - **StockInfo 원본 동적 정답지 생성기 연동 (`test_07_strategy_engin_data_gen_truth.py`)**:
+     - `D:\Projects\AntiGravity\StockInfo\Strategy` 원본 모듈을 직접 동적 임포트하여 레거시 엔진 연산 정답지 데이터(`test_07_strategy_engin_data_gen_truth.json`)를 독립 생성 및 1:1 대조 준비.
+   - **`inspect` 매개변수 완전성 및 신호 대조 검증 (`Ran 8 tests in 0.163s - OK`)**:
+     - `inspect` 모듈을 활용하여 입력 파라미터 누락 여부 자동 Assert 검증.
+     - 8개 전략 모듈에 대해 120일 데이터 매수 신호(🟢) 및 매도 신호(🔴) 발생 일자, 당일 AI 상승확률(`prob_up`) 전수 검증 통과.
+   - **MS 엑셀 한글 호환 CSV 자동 저장 (`test_07_strategy_engine_results.csv`)**:
+     - `utf-8-sig` 인코딩(BOM)을 적용하여 엑셀 더블클릭 시 한글 깨짐 없이 매수/매도 신호 130건(매수 12건, 매도 118건) 자동 출력 연동.
+
+3. **Step 3.2 31개 전략 조합 시뮬레이터 및 백테스팅 엔진 (다음 진행 예정)**
+   - 8개 단일 전략 + 23개 복합 조합 전략 = 총 31개 전략 백테스트 시뮬레이션 리더보드 엔진 구축 예정.
+
+---------------------------------------
+<<<< 미검토 >>>
+[Step 4: Flask 웹 백엔드 (app.py) 개발] 네 번째 단계로 Flask 백엔드 애플리케이션 app.py를 완성해줘.
+
+포함되어야 할 기능:
+
+페이지 라우트: / (메인), /recommendation (AI추천), /backtest (백테스트), /proposal (제안서)
+API 엔드포인트:
+/api/search-stock: 종목코드/종목명 자동완성 검색
+/api/stock-chart/: 해당 종목의 OHLCV + 수급(외국인/기관/연기금) 데이터 JSON 반환
+/api/top-investor-trading: 외국인/기관/연기금 순매수 상위 TOP 20 종목
+/api/market-indices: 코스피/코스닥/S&P500/환율 지수
+/api/recommended-stocks: S1c, S2, S3, S1a, S1b 각 전략별 포착 종목 & AI 상승확률/손익비 API
+/api/backtest-leaderboard: 백테스트 리더보드 및 트레이드 로그 API
+SQLAlchemy 쿼리를 최적화하여 작성해줘.
+
+[Step 5: 프론트엔드 스타일 및 자바스크립트 작성] 다섯 번째 단계로 프론트엔드 CSS 디자인 시스템과 JS 스크립트를 작성해줘.
+
+static/css/style.css:
+Dark Glassmorphism 스타일 (#0d1117, 반투명 카드, 골드/네온 그린 포인트 칼라, CSS 그리드 및 Flexbox, 반응형 웹).
+static/js/app.js:
+종목 자동완성 검색, 지수 티커 업데이트, API 렌더링, 탭 전환, 리더보드 모달 제어 logic.
+static/js/chart.js:
+Chart.js 라이브러리를 활용하여 상단 주가 캔들/종가 차트 + 하단 외국인/기관/연기금/개인 순매수 막대/라인 서브 차트 동시 렌더링 logic.
+[Step 6: HTML 템플릿 4종 구현] 마지막 단계로 웹 대시보드 HTML 템플릿 4개를 작성해줘:
+
+templates/index.html: 메인 대시보드 (검색창, 시장지수 틱, 주가/수급 듀얼 차트, 외인/기관 순매수 TOP 20 테이블)
+templates/recommendation.html: AI 추천실 (전략 S1c, S2, S3 등 탭별 매수 포착 카드, AI 상승확률, 목표가/손절가 정보)
+templates/backtest.html: 백테스트 분석실 (31개 전략 성과 리더보드, 누적 수익률 그래프, 매매일지 모달)
+templates/proposal.html: 퀀트 알고리즘 소개 및 백테스팅 엔진 기획서 문맥
+앞서 작성한 style.css, app.js, chart.js와 정확히 연동되도록 완성해줘.

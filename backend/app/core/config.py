@@ -6,7 +6,11 @@
 """
 
 import os
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# .env 환경 변수를 os.environ에 자동 바인딩
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -24,6 +28,10 @@ class Settings(BaseSettings):
     # 외부 시스템 및 디스코드 웹훅 설정
     DISCORD_WEBHOOK_URL: str = ""
     SPARK_API_SECRET_KEY: str = ""
+
+    # 한국거래소(KRX) 로그인 정보
+    KRX_ID: str = ""
+    KRX_PW: str = ""
 
     class Config:
         """pydantic 설정 메타클래스."""

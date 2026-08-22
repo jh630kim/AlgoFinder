@@ -1,0 +1,180 @@
+================================================================================
+[AlgoFinder] 8개 퀀트 매매 전략 (S1~S5) 상세 기술 명세 및 운용 설명서
+================================================================================
+작성 위치: backend/app/services/strategies/전략설명서.txt
+작성 일자: 2026-08-22
+
+본 문서는 AlgoFinder 시스템에 구현된 S1 ~ S5 총 8개 개별 퀀트 매매 전략 모듈의
+기술적 알고리즘, 파라미터, 매수/매도 조건 수식 및 AI 상승 확신 확률(prob_up)
+산출 엔진에 대한 상세 명세서입니다.
+
+--------------------------------------------------------------------------------
+0. 공통 확률 연산 엔진 (BaseStrategy: 수급 팩터 & 시그모이드 S자 곡선)
+--------------------------------------------------------------------------------
+- 개요: 단순 선형 가산의 한계를 극복하고, 지표 극단값 튀임 현상을 차단하기 위해
+  통계학 Z-Score 및 시그모이드 S자 확률 함수(Sigmoid Function)를 적용합니다.
+- 주체별 수급 Z-Score (Z_investor):
+  * 기관 + 외국인 3일 연속 동시 순매수 포착 시: Z_investor = +1.5 (가산점 약 +10.0%)
+  * 기관 + 외국인 3일 연속 동시 순매도 폭발 시: Z_investor = -1.5 (감점 약 -10.0%)
+  * 기타 평이한 거래일: Z_investor = 0.0
+- 시그모이드 S자 확신 확률 수식 (prob_up):
+  Z_total = (0.6 * Z_core) + (0.4 * Z_investor) + Signal_Bonus
+  prob_up = 10.0 + (80.0 / (1.0 + exp(-0.8 * Z_total)))
+  (※ 결과값은 10.0% ~ 90.0% 사이로 안전하게 정규화 산출됨)
+
+
+--------------------------------------------------------------------------------
+1. S1_MA_Cross (이동평균선 골든크로스 & 60일선 정배열 추세 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s1_ma_cross.py
+- 개요: 단기 5일 이평선이 장기 20일 이평선을 위로 뚫는 골든크로스가 발생하고,
+  주가가 60일 이평선 위에 위치하는 대세 정배열 추세 종목을 포착합니다.
+- 설정 파라미터:
+  * short_window = 5 (단기 5일 종가 이평선)
+  * long_window = 20 (장기 20일 종가 이평선)
+  * trend_window = 60 (추세 60일 종가 이평선)
+- 🟢 매수 조건 (signal_buy):
+  (sma5 > sma20) AND (prev_sma5 <= prev_sma20) AND (close_price > sma60)
+- 🔴 매도 조건 (signal_sell):
+  (sma5 < sma20) AND (prev_sma5 >= prev_sma20)  [데드크로스 발생시]
+- AI 확신 확률 (prob_up):
+  diff_pct = (sma5 - sma20) / sma20 * 100.0
+  Z_core = diff_pct / 1.5
+  Signal_Bonus = 1.0 (매수 신호 발생시)
+
+
+--------------------------------------------------------------------------------
+2. S1a_MA_Cross_Volume (거래량 150% 동반 이평 돌파 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s1a_ma_cross_volume.py
+- 개요: S1 골든크로스 신호에 거래량 신뢰도를 더한 전략입니다. 당일 거래량이
+  5일 거래량 이평선(vol_sma5)의 150% 이상 동반 폭발할 때만 강력한 매수 신호로 채택합니다.
+- 설정 파라미터:
+  * short_window = 5, long_window = 20, vol_mult = 1.5 (거래량 150% 기준)
+- 🟢 매수 조건 (signal_buy):
+  S1_MA_Cross.signal_buy AND (volume >= vol_sma5 * 1.5)
+- 🔴 매도 조건 (signal_sell):
+  S1_MA_Cross.signal_sell OR (close_price < open_price AND volume >= vol_sma5 * 1.5)
+  [S1 데드크로스 발생 또는 거래량 150% 이상 폭발하는 음봉 손절]
+- AI 확신 확률 (prob_up):
+  vol_ratio = volume / vol_sma5
+  Z_core = (diff_pct / 1.5) + ((vol_ratio - 1.0) / 0.5)
+  Signal_Bonus = 1.2 (매수 신호 발생시)
+
+
+--------------------------------------------------------------------------------
+3. S1b_MA_Cross_Legacy (레거시 확률 수식 연동 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s1b_ma_cross_legacy.py
+- 개요: S1 골든크로스 매수 신호가 발생한 종목 중 AI 상승 확신 확률(prob_up)이
+  55.0% 이상인 고확률 정예 종목만 엄선하여 진입합니다.
+- 설정 파라미터:
+  * short_window = 5, long_window = 20, min_prob = 55.0 (최소 55% 확신)
+- 🟢 매수 조건 (signal_buy):
+  S1_MA_Cross.signal_buy AND (prob_up >= 55.0)
+- 🔴 매도 조건 (signal_sell):
+  S1_MA_Cross.signal_sell
+- AI 확신 확률 (prob_up):
+  S1_MA_Cross 의 시그모이드 수급 확률 모델 계승.
+
+
+--------------------------------------------------------------------------------
+4. S1c_MA_Cross_Adaptive (20일선 추세 적응형 듀얼 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s1c_ma_cross_adaptive.py
+- 개요: 시장 국면에 맞게 20일선 기울기를 판단하여, 상승 장에서는 S1b(고확률 추세 추종)를
+  적용하고 횡보/하락 장에서는 S1a(거래량 필터 수급 돌파)를 적응적으로 스위칭합니다.
+- 설정 파라미터:
+  * short_window = 5, long_window = 20, trend_shift = 3
+- 🔍 추세 판단 (is_uptrend):
+  is_uptrend = (sma20 > sma20.shift(3))  [20일선이 3일 전 대비 상승 중인지 여부]
+- 🟢 매수 조건 (signal_buy):
+  IF is_uptrend == True  ➔ S1b_MA_Cross_Legacy.signal_buy 실행
+  IF is_uptrend == False ➔ S1a_MA_Cross_Volume.signal_buy 실행
+- 🔴 매도 조건 (signal_sell):
+  IF is_uptrend == True  ➔ S1b_MA_Cross_Legacy.signal_sell 실행
+  IF is_uptrend == False ➔ S1a_MA_Cross_Volume.signal_sell 실행
+- AI 확신 확률 (prob_up):
+  추세 상태에 따라 S1b 또는 S1a prob_up 적응형 계승.
+
+
+--------------------------------------------------------------------------------
+5. S2_Breakout (RSI 및 이격도 돌파 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s2_breakout.py
+- 개요: 14일 RSI 지표가 9일 Signal 이평을 위로 뚫는 골든크로스가 발생하고,
+  최근 5일간 최저 RSI가 35% 이하(또는 30% 진입)로 눌림목을 형성한 후 반등할 때 매수합니다.
+- 설정 파라미터:
+  * rsi_period = 14 (14일 RSI)
+  * signal_period = 9 (RSI 9일 EMA Signal)
+- 🟢 매수 조건 (signal_buy):
+  (rsi > rsi_signal) AND (prev_rsi <= prev_rsi_signal) AND ((prev_rsi <= 35) OR (rsi_min5 <= 30))
+- 🔴 매도 조건 (signal_sell):
+  (rsi < rsi_signal) AND (prev_rsi >= prev_rsi_signal) AND ((prev_rsi >= 65) OR (rsi_max5 >= 70))
+  [과매수 65/70 진입 후 Signal 이평선 데드크로스 하향 이탈시 전량 매도]
+- AI 확신 확률 (prob_up):
+  Z_core = (rsi - 50.0) / 15.0
+  Signal_Bonus = 1.2 (매수 신호 발생시)
+
+
+--------------------------------------------------------------------------------
+6. S3_Bollinger (볼린저 밴드 반등 & 스퀴즈 돌파 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s3_bollinger.py
+- 개요: 볼린저 밴드(20, 2.0) 밴드폭이 0.14 이하로 극심하게 수축(스퀴즈) 후 상한선(UB)을
+  강하게 폭발 돌파하거나, 하한선(LB) 터치 후 양봉 반등할 때 매수합니다.
+- 설정 파라미터:
+  * window = 20 (20일 중심선 MB)
+  * num_std = 2.0 (표준편차 2.0 승수)
+  * squeeze_threshold = 0.14 (밴드폭 수축 0.14 기준)
+- 🟢 매수 조건 (signal_buy): 아래 (A) 또는 (B) 중 1개 이상 만족
+  (A) 스퀴즈 돌파: (min_bandwidth_20d <= 0.14) AND (close_price > bb_ub) AND (prev_close <= prev_bb_ub)
+  (B) 하한선 반등: (prev_close <= prev_bb_lb * 1.01) AND (close_price > prev_close) AND (close_price >= bb_lb)
+- 🔴 매도 조건 (signal_sell):
+  (prev_close >= prev_bb_ub * 0.995 AND close_price < prev_close) OR (prev_close >= bb_mb AND close_price < bb_mb)
+  [상한선 도달 후 꺾임 또는 중심선 하향 이탈시 매도]
+- AI 확신 확률 (prob_up):
+  pct_b = (close_price - bb_lb) / (bb_ub - bb_lb + 1e-6)
+  Z_core = (50.0 - (pct_b * 100.0)) / 25.0
+  Signal_Bonus = 1.1 (매수 신호 발생시)
+
+
+--------------------------------------------------------------------------------
+7. S4_RSI_Overbought (RSI 과매도 탈출 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s4_rsi_overbought.py
+- 개요: RSI(14) 수치가 30% 이하 과매도(Oversold) 극단 구간에 들어갔다가
+  30% 선을 위로 상향 탈출하는 강한 양봉 반등 발생 시 역발상 매수합니다.
+- 설정 파라미터:
+  * window = 14 (14일 RSI)
+  * oversold = 30.0 (과매도 기준 30%)
+  * overbought = 70.0 (과매수 기준 70%)
+- 🟢 매수 조건 (signal_buy):
+  (prev_rsi14 <= 30.0) AND (rsi14 > 30.0) AND (close_price >= open_price)
+- 🔴 매도 조건 (signal_sell):
+  rsi14 >= 70.0  [RSI 70% 이상 과매수 진입시 차익 실현 매도]
+- AI 확신 확률 (prob_up):
+  Z_core = (30.0 - rsi14) / 15.0
+  Signal_Bonus = 1.0 (매수 신호 발생시)
+
+
+--------------------------------------------------------------------------------
+8. S5_Candle_Patterns (상승 반전 캔들 패턴 전략)
+--------------------------------------------------------------------------------
+- 모듈 파일: backend/app/services/strategies/s5_candle_patterns.py
+- 개요: 아랫꼬리가 긴 망치형 캔들(Hammer)이나 거래량이 180% 이상 폭발한
+  2.5% 이상 대량거래 장대양봉이 포착될 때 반등 매수합니다.
+- 설정 파라미터:
+  * window = 20 (거래량 20일 이동평균 vma20)
+- 🟢 매수 조건 (signal_buy): 아래 (A) 또는 (B) 중 1개 이상 만족
+  (A) 망치형 캔들: (lower_wick >= 1.8 * body) AND (upper_wick <= 0.4 * body) AND (close >= open)
+  (B) 대량거래 장대양봉: ((close - open) / open >= 0.025) AND (volume >= 1.8 * vma20)
+- 🔴 매도 조건 (signal_sell):
+  (upper_wick >= 1.8 * body AND lower_wick <= 0.4 * body AND open >= close) [유성형 캔들]
+  OR (((open - close) / open >= 0.025) AND volume >= 1.5 * vma20) [대량거래 장대음봉]
+- AI 확신 확률 (prob_up):
+  vol_ratio = volume / vma20
+  Z_core = (vol_ratio - 1.0) / 0.6
+  Signal_Bonus = 1.3 (망치형) 또는 1.5 (대량거래 장대양봉)
+
+================================================================================
