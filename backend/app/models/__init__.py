@@ -11,6 +11,7 @@ from backend.app.models.target_stocks import TargetStocks
 from backend.app.models.sync_logs import SyncLogs
 from backend.app.models.strategy_leaderboard import StrategyLeaderboard
 from backend.app.models.strategy_trade_logs import StrategyTradeLogs
+from backend.app.models.paper_trading import PaperPortfolio, PaperPosition, PaperTradeHistory
 
 __all__ = [
     "AllStockMaster",
@@ -20,4 +21,7 @@ __all__ = [
     "SyncLogs",
     "StrategyLeaderboard",
     "StrategyTradeLogs",
+    "PaperPortfolio",
+    "PaperPosition",
+    "PaperTradeHistory",
 ]

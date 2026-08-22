@@ -1,0 +1,16 @@
+{
+  "test_01_run_backtest_combo1": {
+    "input": {
+      "combo_id": 1,
+      "initial_capital": 3000000.0,
+      "max_slots": 3,
+      "start_date": "20260101",
+      "end_date": "20260110",
+      "target_sectors": ["KOSPI 200"]
+    },
+    "expected": {
+      "combo_id": 1,
+      "combo_name": "S1"
+    }
+  }
+}

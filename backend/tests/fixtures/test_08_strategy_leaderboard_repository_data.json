@@ -1,0 +1,42 @@
+{
+  "test_01_upsert_leaderboard": {
+    "input": {
+      "combo_id": 1,
+      "combo_name": "S1_MA_Cross",
+      "final_capital": 3500000.0,
+      "total_return_pct": 16.67,
+      "win_rate_pct": 60.0,
+      "mdd_pct": 5.2,
+      "total_trades": 10
+    },
+    "expected": {
+      "combo_id": 1,
+      "combo_name": "S1_MA_Cross",
+      "total_return_pct": 16.67
+    }
+  },
+  "test_02_bulk_insert_trade_logs": {
+    "input": [
+      {
+        "combo_id": 1,
+        "trade_date": "20260102",
+        "symbol": "005930",
+        "name": "삼성전자",
+        "trade_type": "BUY",
+        "holding_days": 0,
+        "shares": 10,
+        "unit_price": 70000.0,
+        "total_amount": 700000.0,
+        "equity_after_trade": 3000000.0,
+        "cum_return_pct": 0.0,
+        "profit_pct": 0.0,
+        "profit_krw": 0.0,
+        "prob_up": 75.5,
+        "strategy_tag": "S1"
+      }
+    ],
+    "expected": {
+      "saved_count": 1
+    }
+  }
+}

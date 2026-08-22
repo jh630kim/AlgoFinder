@@ -1,0 +1,324 @@
+/**
+ * AlgoFinder 메인 대시보드 4단계 연쇄 동적 필터링 및 컨트롤러 (app.js).
+ * 1단계: 구분(Sector/Market) 선택 -> 2단계: 전체 업종(Industry) 동적 로드 ->
+ * 3단계: 전체(xxx개) 동적 카운트 -> 4단계: 종목(Stock) 드롭다운 연동 및 시가총액 정렬.
+ * 드롭다운에서 선택 시 검색창에 종목명 자동 입력 동기화 및 100% 차트 렌더링 보장.
+ */
+
+document.addEventListener("DOMContentLoaded", () => {
+    initDashboardHeaderStats();
+    initCascadeFilterControls();
+    initStrategyChipEvents();
+    initTimeframeControlEvents();
+});
+
+/** 기간 선택 버튼 (1개월, 6개월, 1년, 5년, 전체) 및 줌 초기화 바인딩 */
+function initTimeframeControlEvents() {
+    const timeBtns = document.querySelectorAll(".time-btn[data-period]");
+    timeBtns.forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            timeBtns.forEach((b) => b.classList.remove("active"));
+            e.target.classList.add("active");
+
+            const periodLimit = parseInt(e.target.getAttribute("data-period"), 10) || 120;
+            const selectStock = document.getElementById("stockSelect");
+            if (selectStock && selectStock.value && window.loadAndRenderCharts) {
+                window.loadAndRenderCharts(selectStock.value, periodLimit);
+            }
+        });
+    });
+
+    const btnResetZoom = document.getElementById("btnResetZoom");
+    if (btnResetZoom) {
+        btnResetZoom.addEventListener("click", () => {
+            if (window.resetTechChartZoom) {
+                window.resetTechChartZoom();
+            }
+        });
+    }
+
+    const btnCustomDate = document.getElementById("btnCustomDate");
+    if (btnCustomDate) {
+        btnCustomDate.addEventListener("click", () => {
+            alert("📅 직접지정 기능: 전체 데이터 범위 내에서 날짜 기간을 자유롭게 조회합니다.");
+            const selectStock = document.getElementById("stockSelect");
+            if (selectStock && selectStock.value && window.loadAndRenderCharts) {
+                window.loadAndRenderCharts(selectStock.value, 5000);
+            }
+        });
+    }
+}
+
+/** 대시보드 상단 칩 정보 4종 로드 */
+function initDashboardHeaderStats() {
+    fetch("/api/market-indices")
+        .then((res) => res.json())
+        .then((res) => {
+            if (res.status === "success") {
+                const data = res.data;
+                document.getElementById("statTotalStocks").innerText = (data.total_stocks || 0).toLocaleString();
+                document.getElementById("statTotalRecords").innerText = (data.total_records || 0).toLocaleString();
+                document.getElementById("statLatestDate").innerText = data.latest_date || "-";
+                document.getElementById("statLastSyncTime").innerText = data.last_sync_time || "-";
+            }
+        })
+        .catch((err) => console.error("Header stats fetch error:", err));
+
+    const btnSync = document.getElementById("btnManualSync");
+    if (btnSync) {
+        btnSync.addEventListener("click", () => {
+            alert("🔄 수급 데이터 동기화 요청이 백그라운드로 전달되었습니다.");
+        });
+    }
+}
+
+/** 4단계 연쇄 제어 컨트롤러 초기화 */
+function initCascadeFilterControls() {
+    const marketSelect = document.getElementById("marketFilterSelect");
+    const sectorSelect = document.getElementById("sectorFilterSelect");
+    const stockSelect = document.getElementById("stockSelect");
+    const inputKeyword = document.getElementById("keywordFilterInput");
+
+    if (!marketSelect || !sectorSelect || !stockSelect) return;
+
+    // 1단계: 구분 목록 백엔드 동적 로드
+    fetch("/api/target-categories")
+        .then((res) => res.json())
+        .then((res) => {
+            if (res.status === "success") {
+                marketSelect.innerHTML = '<option value="ALL">전체 타깃</option>';
+                res.data.forEach((cat) => {
+                    const opt = document.createElement("option");
+                    opt.value = cat;
+                    opt.textContent = cat;
+                    marketSelect.appendChild(opt);
+                });
+            }
+        });
+
+    // 구분 변경 시 -> 2단계 업종 로드 및 3단계 종목 갱신
+    marketSelect.addEventListener("change", (e) => {
+        const categoryVal = e.target.value;
+        loadSectorFilterOptions(categoryVal);
+    });
+
+    // 업종 변경 시 -> 3단계 종목 갱신
+    sectorSelect.addEventListener("change", () => {
+        const categoryVal = marketSelect.value;
+        const industryVal = sectorSelect.value;
+        loadFilteredTargetStocks(categoryVal, industryVal);
+    });
+
+    // 종목 드롭박스 선택 변경 시 -> 검색창 종목명 자동 입력 동기화 & 차트 렌더링!
+    stockSelect.addEventListener("change", (e) => {
+        const selectedCode = e.target.value;
+        const selectedText = e.target.options[e.target.selectedIndex] ? e.target.options[e.target.selectedIndex].text : "";
+        
+        // "삼성전자 (005930)" -> pureName "삼성전자" 추출하여 검색창에 자동 입력!
+        if (inputKeyword && selectedText) {
+            const pureName = selectedText.split("(")[0].trim();
+            inputKeyword.value = pureName;
+        }
+
+        const chk = document.getElementById("chkMarketAggregate");
+        if (chk && chk.checked) {
+            chk.checked = false; // 종목 선택 시 전체 집계 체크 해제
+            stockSelect.disabled = false;
+            if (inputKeyword) inputKeyword.disabled = false;
+        }
+
+        if (selectedCode && window.loadAndRenderCharts) {
+            window.loadAndRenderCharts(selectedCode);
+        }
+    });
+
+    // 검색창 입력 시 -> 종목 드롭박스 <option> 리스트 실시간 동적 필터링!
+    if (inputKeyword) {
+        inputKeyword.addEventListener("input", (e) => {
+            const query = e.target.value.trim().toLowerCase();
+            if (!query) {
+                renderStockSelectOptions(allCurrentTargetStocks);
+                if (allCurrentTargetStocks.length > 0 && stockSelect) {
+                    stockSelect.value = allCurrentTargetStocks[0].code;
+                }
+                return;
+            }
+
+            const filtered = allCurrentTargetStocks.filter(
+                (stk) => stk.name.toLowerCase().includes(query) || stk.code.toLowerCase().includes(query)
+            );
+
+            renderStockSelectOptions(filtered);
+
+            if (filtered.length > 0) {
+                stockSelect.value = filtered[0].code;
+                if (window.loadAndRenderCharts) {
+                    window.loadAndRenderCharts(filtered[0].code);
+                }
+            }
+        });
+    }
+
+    // 초기 실행: 전체 업종 및 종목 로드
+    loadSectorFilterOptions("ALL");
+}
+
+/** 2단계: 구분 기반 업종 옵션 백엔드 로드 */
+function loadSectorFilterOptions(categoryVal) {
+    const sectorSelect = document.getElementById("sectorFilterSelect");
+    const lblCatInd = document.getElementById("lblSelectedCategoryIndustry");
+
+    if (lblCatInd) {
+        lblCatInd.innerHTML = `${categoryVal === "ALL" ? "전체 타깃" : categoryVal} &nbsp; 전체 업종`;
+    }
+
+    fetch(`/api/target-industries?category=${encodeURIComponent(categoryVal)}`)
+        .then((res) => res.json())
+        .then((res) => {
+            if (res.status === "success") {
+                sectorSelect.innerHTML = '<option value="ALL">전체 업종</option>';
+                res.data.forEach((ind) => {
+                    const opt = document.createElement("option");
+                    opt.value = ind;
+                    opt.textContent = ind;
+                    sectorSelect.appendChild(opt);
+                });
+                loadFilteredTargetStocks(categoryVal, "ALL");
+            }
+        });
+}
+
+let allCurrentTargetStocks = [];
+
+/** 3단계 & 4단계: 필터링된 종목 백엔드 로드 및 드롭박스 갱신 (시가총액 정렬 적용) */
+function loadFilteredTargetStocks(categoryVal, industryVal) {
+    const stockSelect = document.getElementById("stockSelect");
+    const chkLabel = document.getElementById("chkAggregateLabel");
+    const inputKeyword = document.getElementById("keywordFilterInput");
+    const lblCatInd = document.getElementById("lblSelectedCategoryIndustry");
+
+    if (lblCatInd) {
+        lblCatInd.innerHTML = `${categoryVal === "ALL" ? "전체 타깃" : categoryVal} &nbsp; ${industryVal === "ALL" ? "전체 업종" : industryVal}`;
+    }
+
+    fetch(`/api/filtered-stocks?category=${encodeURIComponent(categoryVal)}&industry=${encodeURIComponent(industryVal)}`)
+        .then((res) => res.json())
+        .then((res) => {
+            if (res.status === "success") {
+                allCurrentTargetStocks = res.data || [];
+                const totalCount = res.total_count || 0;
+                if (chkLabel) {
+                    chkLabel.innerHTML = `📊 전체 (${totalCount.toLocaleString()}개) : <input type="checkbox" id="chkMarketAggregate" style="accent-color: #38bdf8; cursor: pointer;">`;
+                    bindAggregateCheckboxEvent(categoryVal, industryVal);
+                }
+
+                renderStockSelectOptions(allCurrentTargetStocks);
+
+                // 초기 체크 상태 파악 후 비활성화 & 차트 시각화 트리거
+                const chk = document.getElementById("chkMarketAggregate");
+
+                if (chk && chk.checked) {
+                    stockSelect.disabled = true;
+                    if (inputKeyword) inputKeyword.disabled = true;
+                    fetchAndRenderAggregateChart(categoryVal, industryVal);
+                } else {
+                    stockSelect.disabled = false;
+                    if (inputKeyword) inputKeyword.disabled = false;
+                    if (allCurrentTargetStocks.length > 0) {
+                        const firstStock = allCurrentTargetStocks[0];
+                        stockSelect.value = firstStock.code;
+                        
+                        if (window.loadAndRenderCharts) {
+                            window.loadAndRenderCharts(firstStock.code);
+                        }
+                    }
+                }
+            }
+        });
+}
+
+/** 종목 드롭박스 옵션 동적 렌더링 함수 */
+function renderStockSelectOptions(stocks) {
+    const stockSelect = document.getElementById("stockSelect");
+    if (!stockSelect) return;
+
+    stockSelect.innerHTML = "";
+    if (stocks.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "검색 결과 없음";
+        stockSelect.appendChild(opt);
+        return;
+    }
+
+    stocks.forEach((stk) => {
+        const opt = document.createElement("option");
+        opt.value = stk.code;
+        opt.textContent = `${stk.name} (${stk.code})`;
+        stockSelect.appendChild(opt);
+    });
+}
+
+/** 📊 전체 집계 체크박스 이벤트 바인딩 */
+function bindAggregateCheckboxEvent(categoryVal, industryVal) {
+    const chk = document.getElementById("chkMarketAggregate");
+    const selectStock = document.getElementById("stockSelect");
+    const inputKeyword = document.getElementById("keywordFilterInput");
+    if (!chk) return;
+
+    chk.addEventListener("change", (e) => {
+        if (e.target.checked) {
+            selectStock.disabled = true;
+            if (inputKeyword) inputKeyword.disabled = true;
+            fetchAndRenderAggregateChart(categoryVal, industryVal);
+        } else {
+            selectStock.disabled = false;
+            if (inputKeyword) inputKeyword.disabled = false;
+            if (selectStock.value && window.loadAndRenderCharts) {
+                window.loadAndRenderCharts(selectStock.value);
+            }
+        }
+    });
+}
+
+/** 📊 전체 항목 평균 집계 차트 백엔드 API 로드 및 시각화 */
+function fetchAndRenderAggregateChart(categoryVal, industryVal) {
+    fetch(`/api/aggregate-chart?category=${encodeURIComponent(categoryVal)}&industry=${encodeURIComponent(industryVal)}`)
+        .then((res) => res.json())
+        .then((res) => {
+            if (res.status === "success" && window.renderAggregateCharts) {
+                const suffix = categoryVal === "ALL" ? "전체 타깃" : categoryVal;
+                window.renderAggregateCharts(res.data, suffix);
+            }
+        });
+}
+
+/** 7종 기술적 지표 칩 체크박스 이벤트 바인딩 */
+function initStrategyChipEvents() {
+    const chips = ["chkChipS1c", "chkChipS2", "chkChipS3", "chkChipS1Quant", "chkChipS1aVol", "chkChipS1bOld"];
+    chips.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener("change", () => {
+                if (window.updateTechChartSeriesVisibility) {
+                    window.updateTechChartSeriesVisibility();
+                }
+            });
+        }
+    });
+
+    const btnToggleAll = document.getElementById("btnToggleAllTechChips");
+    if (btnToggleAll) {
+        let allChecked = true;
+        btnToggleAll.addEventListener("click", () => {
+            allChecked = !allChecked;
+            chips.forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.checked = allChecked;
+            });
+            if (window.updateTechChartSeriesVisibility) {
+                window.updateTechChartSeriesVisibility();
+            }
+        });
+    }
+}

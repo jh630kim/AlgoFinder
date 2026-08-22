@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockInfo PRO - AI 퀀트 전략별 실시간 모의투자 분석실</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="pc-layout">
+        <!-- 👈 PC 좌측 고정 사이드바 -->
+        <aside class="app-sidebar-left">
+            <div class="sidebar-brand">📈 AlgoFinder</div>
+            <a href="/" class="sidebar-btn"><span>🏠 메인 대시보드</span></a>
+            <a href="/backtest" class="sidebar-btn"><span>🚀 시뮬레이션</span></a>
+            <a href="/recommendation" class="sidebar-btn active"><span>🎯 모의투자</span></a>
+            <a href="/proposal" class="sidebar-btn"><span>💡 투자제안</span></a>
+            <a href="/proposal-mobile" class="sidebar-btn" style="border-color: #a855f7; color: #c084fc;"><span>💡 투자제안(모)</span></a>
+        </aside>
+
+        <!-- 🎯 모의투자 메인 영역 -->
+        <main class="app-main-content">
+            <header class="card">
+                <h1 style="font-size: 24px; font-weight: 800; color: #f8fafc; margin: 0 0 6px 0;">🎯 AI 퀀트 전략별 실시간 모의투자 분석실</h1>
+                <p style="color: #94a3b8; font-size: 13.5px; margin: 0;">추천 기준일 시점의 전략별 TOP 1~3위 매수 포착 종목을 20% 분할 매수하여 1,000만원 자산 포트폴리오를 실시간 검증합니다.</p>
+            </header>
+
+            <!-- 📌 모의투자 스티키 컨트롤 바 -->
+            <section class="card sticky-control-bar">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="color: #38bdf8; font-size: 15px; font-weight: 700;">📅 추천 기준일:</label>
+                        <input type="date" id="recTargetDate" value="2026-08-19" style="background: #0f172a; color: #fff; border: 1px solid #38bdf8; padding: 7px 12px; border-radius: 8px; font-weight: 700; font-size: 14px;">
+                        <button id="btnFetchRec" style="background: linear-gradient(135deg, #38bdf8, #0284c7); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 700; cursor: pointer;">🔍 당일 조회</button>
+                        <button id="btnNextDayRec" style="background: linear-gradient(135deg, #a855f7, #7e22ce); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 700; cursor: pointer;">⏩ 다음날 조회 (+1일 증가)</button>
+                    </div>
+                    <div style="color: #94a3b8; font-size: 13px; display: flex; align-items: center; gap: 14px;">
+                        <span>📌 최근 수집일: <strong style="color: #34d399;">2026-08-19</strong></span>
+                        <span style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;">💡 퀀트 규칙: 직전 거래일(전일 장마감) 신호 포착 ➔ 추천 기준일(당일 종가) 매수/매도 체결</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 💰 [컴포넌트 1] 자산 (포트폴리오 검증 시뮬레이터) (StockInfo 참고) -->
+            <section class="card" style="border-color: rgba(251, 191, 36, 0.5);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                    <h3 style="margin: 0; color: #fbbf24; font-size: 18px; font-weight: 800;">💰 자산 (포트폴리오 검증 시뮬레이터)</h3>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="btnOpenManualBuyModal" style="background: linear-gradient(135deg, #10b981, #047857); color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 13px; cursor: pointer;">🛒 종목 수동 매수</button>
+                        <button id="btnResetPortfolio" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; padding: 6px 14px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">🔄 자산 초기화 (1,000만원)</button>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div style="background: rgba(15, 23, 42, 0.8); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size: 12px; color: #94a3b8;">초기 투자 자산</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #fff;">10,000,000 원</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.8); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size: 12px; color: #94a3b8;">현재 잔여 현금</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #38bdf8;">10,000,000 원</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.8); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size: 12px; color: #94a3b8;">보유 주식 평가액</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #a855f7;">0 원</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.8); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size: 12px; color: #94a3b8;">총 자산 / 평가 손익</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #fbbf24;">10,000,000 원 (+0.00%)</div>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.8); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                        <div style="font-size: 12px; color: #94a3b8;">보유 종목 수</div>
+                        <div style="font-size: 18px; font-weight: 800; color: #fff;">0 / 5 개</div>
+                    </div>
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">
+                        <thead>
+                            <tr style="background: rgba(15, 23, 42, 0.9); color: #94a3b8;">
+                                <th style="padding: 10px;">종목명 (코드)</th>
+                                <th style="padding: 10px;">매수일</th>
+                                <th style="padding: 10px;">매수가(종가)</th>
+                                <th style="padding: 10px;">수량</th>
+                                <th style="padding: 10px;">투입 금액</th>
+                                <th style="padding: 10px;">현재가(선택일)</th>
+                                <th style="padding: 10px;">평가 손익 (%)</th>
+                                <th style="padding: 10px;">매도 관리</th>
+                                <th style="padding: 10px;">[차트보기]</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="9" style="padding: 24px; color: #64748b;">현재 보유 중인 종목이 없습니다. 아래 추천 표에서 [🛒 매수] 버튼을 눌러보세요.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 🔻 [컴포넌트 2] 보유 종목 매도 추천 시그널 감지 표 (StockInfo 참고) -->
+            <section class="card" style="border-color: rgba(239, 68, 68, 0.5);">
+                <h3 style="margin: 0 0 14px 0; color: #ef4444; font-size: 16px; font-weight: 800;">🔻 보유 종목 매도 추천 시그널 감지 표</h3>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">
+                        <thead>
+                            <tr style="background: rgba(15, 23, 42, 0.9); color: #94a3b8;">
+                                <th style="padding: 10px;">선택</th>
+                                <th style="padding: 10px;">종목명 (코드)</th>
+                                <th style="padding: 10px;">보유 수량</th>
+                                <th style="padding: 10px;">매수가</th>
+                                <th style="padding: 10px;">현재가(선택일)</th>
+                                <th style="padding: 10px;">매도 경고 전략</th>
+                                <th style="padding: 10px;">매도 사유</th>
+                                <th style="padding: 10px;">[차트보기]</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8" style="padding: 20px; color: #64748b;">보유 중인 종목이 없습니다.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 🟢 [컴포넌트 3] 퀀트 전략별 TOP 1~3위 매수 추천 종목 표 (StockInfo 참고) -->
+            <section class="card" style="border-color: rgba(16, 185, 129, 0.5);">
+                <h3 style="margin: 0 0 14px 0; color: #10b981; font-size: 16px; font-weight: 800;">🟢 퀀트 전략별 TOP 1~3위 매수 추천 종목 표</h3>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">
+                        <thead>
+                            <tr style="background: rgba(15, 23, 42, 0.9); color: #94a3b8;">
+                                <th style="padding: 10px;">선택</th>
+                                <th style="padding: 10px;">종목명 (코드)</th>
+                                <th style="padding: 10px;">시장</th>
+                                <th style="padding: 10px;">상승 확신 확률 (%)</th>
+                                <th style="padding: 10px;">추천가 (종가)</th>
+                                <th style="padding: 10px;">알고리즘</th>
+                                <th style="padding: 10px;">매수 포착 핵심 사유</th>
+                                <th style="padding: 10px;">[차트보기]</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 10px;"><button style="background: #10b981; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 800; cursor: pointer;">🛒 매수</button></td>
+                                <td style="padding: 10px; font-weight: 700; color: #fff;">HMM (011200) <span style="background: #0284c7; font-size: 11px; padding: 2px 6px; border-radius: 4px;">TOP 78.8%</span></td>
+                                <td style="padding: 10px; color: #94a3b8;">KOSPI</td>
+                                <td style="padding: 10px; font-weight: 800; color: #38bdf8;">78.8%</td>
+                                <td style="padding: 10px; font-weight: 700; color: #fff;">21,700 원</td>
+                                <td style="padding: 10px; color: #fbbf24;">🟠 S3 볼린저 밴드 전략</td>
+                                <td style="padding: 10px; text-align: left; color: #cbd5e1;">💡 볼린저 밴드 수축(Squeeze) 후 상한선 강한 폭발 돌파 포착</td>
+                                <td style="padding: 10px;"><button style="background: rgba(56,189,248,0.2); color: #38bdf8; border: 1px solid #38bdf8; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;">📊 차트보기</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 🛒 종목 수동 매수 실행 모달 팝업 -->
+    <div class="modal-overlay" id="manualBuyModal">
+        <div class="modal-box">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0; color: #00ff87; font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px;">🛒 종목 수동 매수 실행</h3>
+                <span id="btnCloseModal" style="color: #94a3b8; font-size: 20px; font-weight: 700; cursor: pointer;">&times;</span>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 13px; color: #38bdf8; font-weight: 700; margin-bottom: 6px;">📌 종목 코드 (6자리)</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="text" id="inputStockCode" placeholder="예: 005930" style="width: 140px; background: #0f172a; color: #fff; border: 1px solid #38bdf8; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: 700;">
+                    <span style="font-size: 12px; color: #fbbf24; font-weight: 600;">종목 코드를 입력해 주세요</span>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                <div>
+                    <label style="display: block; font-size: 13px; color: #cbd5e1; font-weight: 700; margin-bottom: 6px;">💵 구매 단가 (원)</label>
+                    <input type="number" id="inputBuyPrice" placeholder="단가 입력" style="width: 100%; background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px 12px; border-radius: 8px; font-size: 14px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 13px; color: #cbd5e1; font-weight: 700; margin-bottom: 6px;">📦 구매 수량 (주)</label>
+                    <input type="number" id="inputBuyQty" placeholder="수량 입력" style="width: 100%; background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px 12px; border-radius: 8px; font-size: 14px;">
+                </div>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; color: #cbd5e1; font-weight: 700; margin-bottom: 6px;">📅 매수 지정일 (YYYY-MM-DD)</label>
+                <input type="date" id="inputBuyDate" value="2026-08-22" style="width: 100%; background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: 700;">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button id="btnCancelModal" style="background: #334155; color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 700; cursor: pointer;">취소</button>
+                <button id="btnConfirmManualBuy" style="background: #00ff87; color: #0f172a; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 800; cursor: pointer;">매수 확인</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/chart.js"></script>
+</body>
+</html>

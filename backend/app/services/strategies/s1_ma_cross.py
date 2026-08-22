@@ -44,10 +44,9 @@ class S1MACrossStrategy(BaseStrategy):
         df['sma5_prev'] = df.groupby('symbol')['sma5'].shift(1)
         df['sma20_prev'] = df.groupby('symbol')['sma20'].shift(1)
 
-        # 2. 🟢 골든크로스 매수 신호 (sma5 > sma20 및 전일 sma5 <= sma20) AND 60일선 상단 정배열
+        # 2. 🟢 골든크로스 매수 신호 (sma5 > sma20 및 전일 sma5 <= sma20)
         golden_cross = (df['sma5'] > df['sma20']) & (df['sma5_prev'] <= df['sma20_prev'])
-        uptrend_60d = df['close_price'] > df['sma60']
-        df['signal_buy'] = golden_cross & uptrend_60d
+        df['signal_buy'] = golden_cross
 
         # 3. 🔴 데드크로스 매도 신호 (sma5 < sma20 및 전일 sma5 >= sma20)
         dead_cross = (df['sma5'] < df['sma20']) & (df['sma5_prev'] >= df['sma20_prev'])

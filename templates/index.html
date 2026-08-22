@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlgoFinder - 알선 투자 메인 대시보드</title>
+
+    <link rel="icon" href="data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU55AK4=">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="{{ url_for('static', filename='js/load_sidebar.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chart.js') }}"></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- 좌측 사이드바 (사이드바 고정 220px) -->
+        <aside class="sidebar" id="sidebarNav"></aside>
+
+        <!-- 메인 콘텐츠 영역 -->
+        <main class="main-content">
+            <!-- 메인 대시보드 상단 칩 4종 정보바 -->
+            <header class="dashboard-header">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <h1 class="header-title">📈 AlgoFinder 알선 투자 메인 대시보드</h1>
+                    <div style="display: flex; gap: 8px;">
+                        <span class="summary-chip">📊 DB 저장: <strong id="statTotalStocks">0</strong>개</span>
+                        <span class="summary-chip">📁 수급 레코드: <strong id="statTotalRecords">0</strong>건</span>
+                        <span class="summary-chip">📅 최근 거래일: <strong id="statLatestDate">-</strong></span>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="summary-chip" style="color: #34d399;">📅 최근 동기화: <strong id="statLastSyncTime">-</strong></span>
+                    <button class="sidebar-btn" id="btnManualSync" style="background: linear-gradient(135deg, #0284c7, #0369a1); cursor: pointer;">🔄 수급 동기화</button>
+                </div>
+            </header>
+
+            <!-- 단일 통합 스티키 제어 카드 (Integrated Sticky Control Card) -->
+            <section class="integrated-sticky-control-card">
+                <!-- Row 1: 4단계 연쇄 동적 제어바 -->
+                <div class="control-row-main">
+                    <div class="control-group">
+                        <label class="control-label">🏛️ 구분:</label>
+                        <select class="control-select" id="marketFilterSelect">
+                            <option value="ALL">전체 타깃</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">🏭 전체 업종:</label>
+                        <select class="control-select" id="sectorFilterSelect">
+                            <option value="ALL">전체 업종</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label" id="chkAggregateLabel">📊 전체 (0개) : <input type="checkbox" id="chkMarketAggregate" style="accent-color: #38bdf8; cursor: pointer;"></label>
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">🔍 검색:</label>
+                        <input type="text" class="control-input" id="keywordFilterInput" placeholder="종목명/코드 검색...">
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">🔍 종목:</label>
+                        <select class="control-select" id="stockSelect">
+                            <option value="005930">삼성전자 (005930)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Row 2: 기간 선택 & 줌 초기화 서브 제어바 -->
+                <div class="control-row-sub">
+                    <div class="category-industry-label">
+                        <strong id="lblSelectedCategoryIndustry" style="color: #38bdf8; font-size: 0.92rem;">KOSPI 200 &nbsp; 전체 업종</strong>
+                    </div>
+
+                    <div class="timeframe-group">
+                        <span style="font-size: 0.83rem; color: #94a3b8; margin-right: 4px;">기간 선택:</span>
+                        <button class="time-btn" data-period="20">1개월</button>
+                        <button class="time-btn active" data-period="120">6개월</button>
+                        <button class="time-btn" data-period="250">1년</button>
+                        <button class="time-btn" data-period="1250">5년</button>
+                        <button class="time-btn" data-period="5000">전체 (20년)</button>
+                        <button class="time-btn" id="btnCustomDate">📅 직접지정</button>
+                        <button class="time-btn btn-reset-zoom" id="btnResetZoom">🔄 줌 초기화</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 메인 대시보드 2단 레이아웃 콘텐츠 (상단 기술적 매매지표 & 하단 주가/수급 복합 차트) -->
+            <section class="dashboard-grid">
+                <!-- [차트 1] 프리미엄 기술적 매매지표 S1c HUD 복합 차트 카드 -->
+                <div class="glass-card full-width">
+                    <div class="card-header" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                            <div>
+                                <h3 class="card-title">📈 기술적 매매지표 (S1c 20일선 적응형)</h3>
+                                <p style="font-size: 0.82rem; color: #94a3b8; margin-top: 2px;">
+                                    5일선(MA5) & 20일선(MA20) 듀얼 이평선 골든/데드크로스 매매 타점 포착
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- S1c 20일선 적응형 전용 칩 표기 -->
+                        <div class="strategy-chip-toolbar">
+                            <label class="tech-chip chip-gold">
+                                <input type="checkbox" id="chkChipS1c" checked disabled>
+                                <span class="chip-label">🟡 S1c 20일선 적응형</span>
+                            </label>
+                        </div>
+
+                        <!-- 2. 바로 아래: 지정된 고정 위치 실시간 HUD 호버 수치 박스 -->
+                        <div id="techHudBox" class="tech-hud-box">
+                            📌 차트에 마우스를 올리면 해당 일자의 지표 수치가 이 위치에 실시간으로 표시됩니다. (마우스 휠: 확대/축소, 드래그: 좌우 이동)
+                        </div>
+                    </div>
+
+                    <!-- 3. 바로 아래: 차트 Canvas 영역 -->
+                    <div class="card-body chart-container" style="height: 480px; position: relative;">
+                        <canvas id="techIndicatorChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- [차트 2] 주가 & 수급 통합 복합 차트 카드 -->
+                <div class="glass-card full-width">
+                    <div class="card-header">
+                        <h3 class="card-title">📊 주가 & 수급 통합 복합 차트 (당일종가 기준)</h3>
+                    </div>
+                    <div class="card-body chart-container" style="height: 380px;">
+                        <canvas id="priceSupplyChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockInfo PRO - 20년 백테스트 & 실전 매매일지 분석실</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="pc-layout">
+        <!-- 👈 PC 좌측 고정 사이드바 -->
+        <aside class="app-sidebar-left">
+            <div class="sidebar-brand">📈 AlgoFinder</div>
+            <a href="/" class="sidebar-btn"><span>🏠 메인 대시보드</span></a>
+            <a href="/backtest" class="sidebar-btn active"><span>🚀 시뮬레이션</span></a>
+            <a href="/recommendation" class="sidebar-btn"><span>🎯 모의투자</span></a>
+            <a href="/proposal" class="sidebar-btn"><span>💡 투자제안</span></a>
+            <a href="/proposal-mobile" class="sidebar-btn" style="border-color: #a855f7; color: #c084fc;"><span>💡 투자제안(모)</span></a>
+        </aside>
+
+        <!-- 🖥️ 시뮬레이션 메인 영역 -->
+        <main class="app-main-content">
+            <header class="card">
+                <h1 style="font-size: 22px; font-weight: 800; color: #38bdf8; margin: 0 0 6px 0;">📊 20년 백테스트 & 실전 매매일지 분석실</h1>
+                <p style="font-size: 13px; color: #94a3b8; margin: 0;">1,000만 원 포트폴리오 기준 31대 퀀트 전략 시뮬레이션 및 실제 매수/매도 복기</p>
+            </header>
+
+            <!-- 📌 스티키 컨트롤 바 (내림차순 정렬 전략 드롭다운 + 기본 3년 시뮬레이션 기간) -->
+            <section class="card sticky-control-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <label style="color: #cbd5e1; font-weight: 700; font-size: 14px;">🏆 백테스트 전략 선택:</label>
+                    <select id="strategyRankSelect" style="background: #1e293b; color: #f8fafc; border: 1px solid #3b82f6; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 700; cursor: pointer; min-width: 280px;">
+                        <option value="S4" selected>🥇 1위: S4 (+183.72%)</option>
+                        <option value="S1c">🥈 2위: S1c (+145.20%)</option>
+                        <option value="S2">🥉 3위: S2 (+112.50%)</option>
+                    </select>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <label style="color: #cbd5e1; font-weight: 700; font-size: 14px;">📅 백테스트 시뮬레이션 기간:</label>
+                    <select id="backtestRangeSelect" style="background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;">
+                        <option value="6m">최근 6개월</option>
+                        <option value="1y">최근 1년</option>
+                        <option value="3y" selected>최근 3년 (기본)</option>
+                        <option value="5y">최근 5년</option>
+                        <option value="all">전체 (20년)</option>
+                    </select>
+                </div>
+            </section>
+
+            <!-- 📊 전략 성과 요약 KPI 5종 카드 -->
+            <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px;">
+                <div class="card" style="text-align: center; margin: 0;">
+                    <div style="font-size: 12px; color: #94a3b8;">전략 조합명</div>
+                    <div style="font-size: 20px; font-weight: 800; color: #38bdf8;">S4</div>
+                </div>
+                <div class="card" style="text-align: center; margin: 0;">
+                    <div style="font-size: 12px; color: #94a3b8;">최종 자산 평가액</div>
+                    <div style="font-size: 18px; font-weight: 800; color: #d4af37;">28,372,278 원</div>
+                </div>
+                <div class="card" style="text-align: center; margin: 0;">
+                    <div style="font-size: 12px; color: #94a3b8;">백테스트 기간 수익률</div>
+                    <div style="font-size: 20px; font-weight: 800; color: #00ff87;">+183.72%</div>
+                </div>
+                <div class="card" style="text-align: center; margin: 0;">
+                    <div style="font-size: 12px; color: #94a3b8;">실제 거래 승률</div>
+                    <div style="font-size: 20px; font-weight: 800; color: #a855f7;">63.71%</div>
+                </div>
+                <div class="card" style="text-align: center; margin: 0;">
+                    <div style="font-size: 12px; color: #94a3b8;">최대 낙폭 (MDD)</div>
+                    <div style="font-size: 20px; font-weight: 800; color: #ef4444;">-56.03%</div>
+                </div>
+                <div class="card" style="text-align: center; margin: 0;">
+                    <div style="font-size: 12px; color: #94a3b8;">총 거래 횟수</div>
+                    <div style="font-size: 20px; font-weight: 800; color: #fff;">394회</div>
+                </div>
+            </section>
+
+            <!-- 📋 백테스트 실제 매매 복기 일지 테이블 (9개 컬럼 스펙) -->
+            <section class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h3 style="margin: 0; color: #38bdf8; font-size: 16px; font-weight: 800;">📋 백테스트 실제 매매 복기 일지 (Buy / Sell 상세 내역)</h3>
+                    <span style="font-size: 12px; background: #0284c7; padding: 4px 10px; border-radius: 12px; font-weight: 700; color: #fff;">총 788 건</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">
+                        <thead>
+                            <tr style="background: rgba(30, 41, 59, 0.9); color: #94a3b8;">
+                                <th style="padding: 10px;">체결일자</th>
+                                <th style="padding: 10px;">종목명 (코드)</th>
+                                <th style="padding: 10px;">구분</th>
+                                <th style="padding: 10px;">보유기간</th>
+                                <th style="padding: 10px;">체결수량</th>
+                                <th style="padding: 10px;">체결단가</th>
+                                <th style="padding: 10px;">총 거래금액</th>
+                                <th style="padding: 10px;">체결 후 누적자산 (수익률)</th>
+                                <th style="padding: 10px;">실현 손익률 (손익금액)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 10px;">2014-06-12</td>
+                                <td style="padding: 10px; font-weight: 700; color: #38bdf8;">솔브레인홀딩스 (036830)</td>
+                                <td style="padding: 10px;"><span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px;">매수S4</span></td>
+                                <td style="padding: 10px;">1일</td>
+                                <td style="padding: 10px;">59주</td>
+                                <td style="padding: 10px; color: #38bdf8;">33,400 원</td>
+                                <td style="padding: 10px; color: #d4af37; font-weight: 700;">1,970,600 원</td>
+                                <td style="padding: 10px;">10,000,000원 (+0%)</td>
+                                <td style="padding: 10px; color: #94a3b8;">-</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 10px;">2014-06-26</td>
+                                <td style="padding: 10px; font-weight: 700; color: #38bdf8;">솔브레인홀딩스 (036830)</td>
+                                <td style="padding: 10px;"><span style="background: #ec4899; color: #fff; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px;">매도S4</span></td>
+                                <td style="padding: 10px;">10일</td>
+                                <td style="padding: 10px;">59주</td>
+                                <td style="padding: 10px; color: #ef4444;">35,900 원</td>
+                                <td style="padding: 10px; color: #d4af37; font-weight: 700;">2,118,100 원</td>
+                                <td style="padding: 10px;">9,503,458원 (-4.97%)</td>
+                                <td style="padding: 10px; color: #00ff87; font-weight: 700;">+7.16% (+141,367원)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/chart.js"></script>
+</body>
+</html>

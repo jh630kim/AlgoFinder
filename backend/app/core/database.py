@@ -6,7 +6,7 @@
 """
 
 from typing import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from backend.app.core.config import settings
 
@@ -36,8 +36,15 @@ class DatabaseManager:
         )
 
     def create_all_tables(self) -> None:
-        """등록된 모든 SQLAlchemy ORM 모델 테이블을 DB에 생성합니다."""
+        """등록된 모든 SQLAlchemy ORM 모델 테이블을 DB에 생성 및 안전 마이그레이션합니다."""
         Base.metadata.create_all(bind=self.engine)
+        # paper_* 테이블에 account_type 컬럼 마이그레이션 안전 처리
+        with self.engine.begin() as conn:
+            for tbl in ["paper_portfolios", "paper_positions", "paper_trade_histories"]:
+                try:
+                    conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN account_type VARCHAR(20) DEFAULT 'rec'"))
+                except Exception:
+                    pass  # 이미 컬럼이 존재하는 경우 예외 무시
 
     def get_session(self) -> Generator[Session, None, None]:
         """

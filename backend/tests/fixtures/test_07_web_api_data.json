@@ -1,0 +1,18 @@
+{
+  "test_search_stock": {
+    "query": "삼성",
+    "expected_status": "success",
+    "min_results": 1
+  },
+  "test_stock_chart": {
+    "code": "005930",
+    "expected_status": "success"
+  },
+  "test_top_investors": {
+    "expected_status": "success"
+  },
+  "test_paper_trading_reset": {
+    "initial_balance": 10000000.0,
+    "expected_status": "success"
+  }
+}
