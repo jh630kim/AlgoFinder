@@ -34,8 +34,9 @@ class Test04MarketDataCollector(unittest.TestCase):
             self.fixtures = json.load(f)
 
     def tearDown(self) -> None:
-        """테스트 세션 정리."""
+        """테스트 세션 및 DB 엔진 자원 정리."""
         self.session.close()
+        self.engine.dispose()
 
     def assert_parameters_complete(self, func, input_dict: dict) -> None:
         """

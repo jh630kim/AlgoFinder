@@ -35,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger("run_data_collection")
 
 
-def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str = None, end_date: str = None) -> None:
+def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str = None, end_date: str = None, session = None) -> None:
     """
     1단계~3단계 통합 데이터 수집 파이프라인을 지정된 모드 및 단계별로 선택 실행합니다.
 
@@ -43,6 +43,7 @@ def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str 
     :param stage: 수집 단계 선택 ('all': 전체 1~3단계, '1': 1단계 마스터, '2': 2단계 지수/환율, '3': 3단계 타깃 수급/OHLCV)
     :param start_date: 수집 시작일자 (YYYYMMDD, 미지정 시 20050101부터)
     :param end_date: 수집 종료일자 (YYYYMMDD, 미지정 시 오늘까지)
+    :param session: SQLAlchemy 세션 객체 (미지정 시 기본 DB 세션 사용)
     """
     is_incremental = (mode.lower() == "incremental")
     stage_str = str(stage).lower()
@@ -57,9 +58,10 @@ def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str 
     logger.info(f"⚙️ 옵션: 증분수집={is_incremental}, 실행단계={stage_str}, 수집대상 기간={start_date} ~ {end_date}")
     logger.info("==================================================")
 
-    # DB 테이블 생성 보장
-    db_manager.create_all_tables()
-    session = next(db_manager.get_session())
+    # DB 테이블 생성 보장 및 세션 초기화
+    if session is None:
+        db_manager.create_all_tables()
+        session = next(db_manager.get_session())
 
     try:
         # ----------------------------------------------------
@@ -106,7 +108,7 @@ def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str 
             )
             logger.info(
                 f"  └─ ✅ [3단계 완료] 타깃 {stage3_res.get('target_symbols_count')}개 종목 중 "
-                f"적재 {stage3_res.get('total_records_saved')}건 완료 (건너뀀 {stage3_res.get('skipped_symbols_count')}개)"
+                f"적재 {stage3_res.get('total_records_saved')}건 완료 (건너뜀 {stage3_res.get('skipped_symbols_count')}개)"
             )
 
         logger.info("\n==================================================")

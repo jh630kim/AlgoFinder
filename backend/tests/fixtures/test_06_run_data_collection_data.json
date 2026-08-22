@@ -31,5 +31,27 @@
     "expected": {
       "status": "SUCCESS"
     }
+  },
+  "test_04_run_pipeline_stage2": {
+    "input": {
+      "mode": "incremental",
+      "stage": "2",
+      "start_date": "20260102",
+      "end_date": "20260102"
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  "test_05_run_pipeline_stage3": {
+    "input": {
+      "mode": "incremental",
+      "stage": "3",
+      "start_date": "20260102",
+      "end_date": "20260102"
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
   }
 }

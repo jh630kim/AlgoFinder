@@ -5,7 +5,7 @@
 시가/고가/저가/종가/거래량 데이터를 관리하는 InvestorTradingDaily 클래스를 정의합니다.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, BigInteger, Float, DateTime
 from backend.app.core.database import Base
 
@@ -37,7 +37,7 @@ class InvestorTradingDaily(Base):
     volume = Column(BigInteger, nullable=False, comment="거래량(주)")
 
     # 수정 일시
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="수정일시")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), comment="수정일시")
 
     def __repr__(self) -> str:
         """InvestorTradingDaily 객체의 문자열 표현을 반환합니다."""

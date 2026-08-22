@@ -5,7 +5,7 @@
 저장하고 관리하는 StrategyTradeLogs 클래스를 정의합니다.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from backend.app.core.database import Base
 
@@ -48,7 +48,7 @@ class StrategyTradeLogs(Base):
     strategy_tag = Column(String(20), nullable=True, comment="전략 태그(S1~S5)")
 
     # 등록 일시
-    created_at = Column(DateTime, default=datetime.utcnow, comment="등록일시")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), comment="등록일시")
 
     def __repr__(self) -> str:
         """StrategyTradeLogs 객체의 문자열 표현을 반환합니다."""

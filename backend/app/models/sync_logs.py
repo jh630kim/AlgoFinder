@@ -5,7 +5,7 @@
 저장하고 관리하는 SyncLogs 클래스를 정의합니다.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from backend.app.core.database import Base
 
@@ -34,7 +34,7 @@ class SyncLogs(Base):
     elapsed_seconds = Column(Float, default=0.0, comment="소요시간(초)")
     elapsed_time_str = Column(String(50), nullable=True, comment="소요시간 표현")
     # 등록 일시
-    created_at = Column(DateTime, default=datetime.utcnow, comment="등록일시")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), comment="등록일시")
 
     def __repr__(self) -> str:
         """SyncLogs 객체의 문자열 표현을 반환합니다."""

@@ -34,8 +34,9 @@ class Test03StockMasterCollector(unittest.TestCase):
             self.fixtures = json.load(f)
 
     def tearDown(self) -> None:
-        """테스트 세션 정리."""
+        """테스트 세션 및 DB 엔진 자원 정리."""
         self.session.close()
+        self.engine.dispose()
 
     def assert_parameters_complete(self, func, input_dict: dict) -> None:
         """
@@ -76,7 +77,7 @@ class Test03StockMasterCollector(unittest.TestCase):
         collector = StockMasterCollector(self.session)
         self.assert_parameters_complete(collector.filter_target_symbols, data["input"])
 
-        with patch.object(collector, "_fetch_index_constituents", side_effect=lambda ticker: ["005930"] if ticker == "1028" else []):
+        with patch.object(collector, "_fetch_index_constituents", side_effect=lambda ticker: ["005930"] if ticker == "1028" else (["371160"] if ticker == "2203" else [])):
             res = collector.filter_target_symbols(data["input"]["items"])
             print(f"[StockMasterCollector.filter_target_symbols | 입력값: {data['input']} | 예상목록: {data['expected']['target_symbols']} | 실제: {res}]")
             self.assertEqual(res, data["expected"]["target_symbols"])

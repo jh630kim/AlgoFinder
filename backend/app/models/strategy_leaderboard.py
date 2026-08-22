@@ -5,7 +5,7 @@
 저장 및 관리하는 StrategyLeaderboard 클래스를 정의합니다.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from backend.app.core.database import Base
 
@@ -33,7 +33,7 @@ class StrategyLeaderboard(Base):
     total_trades = Column(Integer, nullable=False, default=0, comment="총 거래 횟수")
 
     # 수정 일시
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="수정일시")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), comment="수정일시")
 
     def __repr__(self) -> str:
         """StrategyLeaderboard 객체의 문자열 표현을 반환합니다."""

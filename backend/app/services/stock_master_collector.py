@@ -6,7 +6,7 @@ FinanceDataReader 및 pykrx를 활용하여 KOSPI 200, KOSDAQ 150, 미국 ETF �
 """
 
 from typing import List, Dict, Any, Set
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from sqlalchemy.orm import Session
 import FinanceDataReader as fdr
@@ -105,26 +105,23 @@ class StockMasterCollector:
     def _fetch_index_constituents(self, ticker: str) -> List[str]:
         """
         pykrx를 활용해 지정된 지수 티커의 구성 종목 목록을 수집합니다.
+        주말/휴일/장개장 전 데이터를 고려하여 최근 7일간의 날짜를 역순으로 소급 조회합니다.
 
         :param ticker: 지수 티커 (예: '1028' - KOSPI 200, '2203' - KOSDAQ 150)
         :return: 6자리 종목코드 문자열 리스트
         """
-        today_str = datetime.now().strftime("%Y%m%d")
-        try:
-            # 주말/휴일/장 개장 전을 고려하여 최근 영업일 날짜 우선 구하기
-            target_date = stock.get_nearest_business_day_in_a_week(today_str)
-            codes = stock.get_index_portfolio_deposit_file(ticker, target_date)
-            if codes is None or len(codes) == 0:
-                # 당일 날짜로 2차 재시도
-                codes = stock.get_index_portfolio_deposit_file(ticker, today_str)
+        now = datetime.now()
+        for i in range(7):
+            target_date = (now - timedelta(days=i)).strftime("%Y%m%d")
+            try:
+                codes = stock.get_index_portfolio_deposit_file(ticker, target_date)
+                if codes is not None and len(codes) > 0:
+                    return [str(c).zfill(6) for c in codes]
+            except Exception:
+                continue
 
-            if codes is None or len(codes) == 0:
-                return []
-
-            return [str(c).zfill(6) for c in codes]
-        except Exception as exc:
-            logger.error("지수 티커 %s (pykrx) 수집 실패: %s", ticker, exc)
-            return []
+        logger.error("지수 티커 %s (pykrx) 최근 7일 소급 수집 실패", ticker)
+        return []
 
     def filter_target_symbols(self, items: List[Dict[str, Any]]) -> List[str]:
         """

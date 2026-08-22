@@ -5,7 +5,7 @@
 저장 및 관리하는 테이블과 매칭되는 AllStockMaster 클래스를 정의합니다.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, BigInteger, DateTime
 from backend.app.core.database import Base
 
@@ -31,9 +31,9 @@ class AllStockMaster(Base):
     # 상장주식수
     stocks = Column(BigInteger, nullable=True, comment="상장주식수")
     # 등록 일시
-    created_at = Column(DateTime, default=datetime.utcnow, comment="등록일시")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), comment="등록일시")
     # 수정 일시
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="수정일시")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), comment="수정일시")
 
     def __repr__(self) -> str:
         """AllStockMaster 객체의 문자열 표현을 반환합니다."""
