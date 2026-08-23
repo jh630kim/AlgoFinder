@@ -44,8 +44,9 @@ class S2BreakoutStrategy(BaseStrategy):
         df['rsi_prev'] = df.groupby('symbol')['rsi'].shift(1)
         df['signal_prev'] = df.groupby('symbol')['signal'].shift(1)
 
-        # 2. 🟢 매수 신호: RSI ↔ Signal 골든크로스 AND 최근 5일 내 RSI <= 35/30 눌림목 형성 후 반등
-        rsi_golden_cross = (df['rsi'] > df['signal']) & (df['rsi_prev'] <= df['signal_prev'])
+        # 2. 🟢 매수 신호: RSI ↔ Signal 강한 상향 이탈(이격도 >= 1.5%p) AND 최근 5일 내 RSI <= 35/30 눌림목 형성 후 반등
+        rsi_diff = df['rsi'] - df['signal']
+        rsi_golden_cross = (rsi_diff >= 1.5) & (df['rsi_prev'] <= df['signal_prev'])
         oversold_pullback = (df['rsi_prev'] <= 35) | (df['rsi_min5'] <= 30)
         df['signal_buy'] = rsi_golden_cross & oversold_pullback
 

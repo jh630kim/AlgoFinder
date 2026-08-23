@@ -36,18 +36,30 @@ class S4RSIStrategy(BaseStrategy):
         """
         df = df.copy()
 
-        # 1. BaseStrategy 헬퍼에서 RSI(14) 단 1개 지표만 핀포인트 계산 (이평선, 볼린저 연산 무시)
-        rsi, _, _, _ = self.calc_rsi(df, self.window)
+        # 1. BaseStrategy 헬퍼에서 RSI(14) 및 Signal(9일 이평) 핀포인트 계산
+        rsi, signal, rsi_min5, rsi_max5 = self.calc_rsi(df, self.window, 9)
         df['rsi14'] = rsi
+        df['signal'] = signal
         df['rsi14_prev'] = df.groupby('symbol')['rsi14'].shift(1)
+        df['signal_prev'] = df.groupby('symbol')['signal'].shift(1)
 
-        # 2. 🟢 매수 신호: 전일 RSI 30% 이하 ➔ 금일 RSI 30% 상향 탈출 AND 금일 양봉
+        # 2. 💙 S4 표준 전략: 30% 과매도선 상향 탈출 매수 / 70% 과매수 영역 진입 매도
         rsi_exit_oversold = (df['rsi14_prev'] <= self.oversold) & (df['rsi14'] > self.oversold)
         is_bullish = df['close_price'] >= df['open_price']
         df['signal_buy'] = rsi_exit_oversold & is_bullish
 
-        # 3. 🔴 매도 신호: RSI 70% 이상 과매수 진입시
-        df['signal_sell'] = df['rsi14'] >= self.overbought
+        rsi_enter_overbought = (df['rsi14_prev'] < self.overbought) & (df['rsi14'] >= self.overbought)
+        df['signal_sell'] = rsi_enter_overbought
+
+        # 3. ⚡ S4a Signal 교차 전략: 과매도(30/35% 이하) 후 9일선 1.5%p 상향 돌파 / 과매수 후 9일선 하향 이탈
+        rsi_diff = df['rsi14'] - df['signal']
+        rsi_golden_cross = (rsi_diff >= 1.5) & (df['rsi14_prev'] <= df['signal_prev'])
+        oversold_pullback = (df['rsi14_prev'] <= 35.0) | (rsi_min5 <= 30.0)
+        df['signal_buy_s4a'] = rsi_golden_cross & oversold_pullback
+
+        rsi_dead_cross = (df['rsi14'] < df['signal']) & (df['rsi14_prev'] >= df['signal_prev'])
+        overbought_exit = (df['rsi14_prev'] >= 65.0) | (rsi_max5 >= 70.0)
+        df['signal_sell_s4a'] = rsi_dead_cross & overbought_exit
 
         # 4. 수급 팩터 + 시그모이드 S자 AI 확신 확률 (prob_up) 계산
         z_core = (self.oversold - df['rsi14']) / 15.0

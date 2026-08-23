@@ -46,21 +46,19 @@ class S3BollingerStrategy(BaseStrategy):
         df['bb_ub_prev'] = df.groupby('symbol')['bb_ub'].shift(1)
         df['bb_lb_prev'] = df.groupby('symbol')['bb_lb'].shift(1)
 
-        # 2. 🟢 매수 신호 (A: 0.14 이하 스퀴즈 후 상한선 돌파 / B: 하한선 이탈 후 양봉 반등)
+        # 2. 🌸 S3 일반 반등 매수/매도 (표준 평균회귀: 하한선 이탈 후 복귀 양봉 / 상한선 진입 후 복귀 음봉)
+        lower_rebound = (df['close_prev'] <= df['bb_lb_prev']) & (df['close_price'] > df['bb_lb']) & (df['close_price'] > df['close_prev'])
+        upper_reversal = (df['close_prev'] >= df['bb_ub_prev']) & (df['close_price'] < df['bb_ub']) & (df['close_price'] < df['close_prev'])
+
+        df['signal_buy'] = lower_rebound
+        df['signal_sell'] = upper_reversal
+
+        # 3. 💥 S3a 스퀴즈 폭발 돌파 매수/매도 (20일 최저 밴드폭 0.14 이하 수축 후 상한선 돌파)
         squeeze_breakout = (df['min_bandwidth_20d'] <= 0.14) & (df['close_price'] > df['bb_ub']) & (df['close_prev'] <= df['bb_ub_prev'])
-        lower_rebound = (df['close_prev'] <= df['bb_lb_prev'] * 1.01) & (df['close_price'] > df['close_prev']) & (df['close_price'] >= df['bb_lb'])
-
-        buy_condition = squeeze_breakout | lower_rebound
-        df['signal_buy'] = buy_condition
-        df['squeeze_breakout'] = squeeze_breakout
-        df['lower_rebound'] = lower_rebound
-
-        # 3. 🔴 매도 신호 (상한선 도달 후 꺾임 또는 중심선 이탈)
-        upper_reversal = (df['close_prev'] >= df['bb_ub_prev'] * 0.995) & (df['close_price'] < df['close_prev'])
         mb_breakdown = (df['close_prev'] >= df['bb_mb']) & (df['close_price'] < df['bb_mb'])
 
-        sell_condition = (upper_reversal | mb_breakdown) & (~buy_condition)
-        df['signal_sell'] = sell_condition
+        df['signal_buy_s3a'] = squeeze_breakout
+        df['signal_sell_s3a'] = mb_breakdown & (~squeeze_breakout)
 
         # 4. 수급 팩터 + 시그모이드 S자 AI 확신 확률 (prob_up) 계산
         pct_b = (df['close_price'] - df['bb_lb']) / (df['bb_ub'] - df['bb_lb'] + 1e-6)

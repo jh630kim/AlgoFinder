@@ -17,6 +17,13 @@ from backend.app.models.investor_trading_daily import InvestorTradingDaily
 from backend.app.models.sync_logs import SyncLogs
 from backend.app.models.market_indices_daily import MarketIndicesDaily
 from backend.app.services.strategies.s1c_ma_cross_adaptive import S1cMACrossAdaptiveStrategy
+from backend.app.services.strategies.s1_ma_cross import S1MACrossStrategy
+from backend.app.services.strategies.s1a_ma_cross_volume import S1aMACrossVolumeStrategy
+from backend.app.services.strategies.s1b_ma_cross_legacy import S1bMACrossLegacyStrategy
+from backend.app.services.strategies.s2_breakout import S2BreakoutStrategy
+from backend.app.services.strategies.s3_bollinger import S3BollingerStrategy
+from backend.app.services.strategies.s4_rsi_overbought import S4RSIStrategy
+from backend.app.services.strategies.s5_candle_patterns import S5CandlePatternsStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -133,16 +140,18 @@ class WebRepository:
 
     def get_stock_chart_data(self, stock_code: str, limit: int = 120) -> List[Dict[str, Any]]:
         """해당 종목의 최신 OHLCV 및 4대 주체 수급을 날짜 오름차순으로 조회하고 백엔드 퀀트 전략 시그널을 연동합니다."""
+        # 지정된 limit(120일)보다 15일 이전 과거 데이터까지 가져와 지표 사전 연산(15일 워밍업)
+        fetch_limit = limit + 15
         records = (
             self.session.query(InvestorTradingDaily)
             .filter(InvestorTradingDaily.symbol == stock_code)
             .order_by(desc(InvestorTradingDaily.date))
-            .limit(limit)
+            .limit(fetch_limit)
             .all()
         )
         records.reverse()
 
-        res_list = [
+        full_list = [
             {
                 "symbol": r.symbol,
                 "date": r.date,
@@ -163,38 +172,123 @@ class WebRepository:
                 "institution_net_buy": float(r.institution_net_buy or 0),
                 "pension_net_buy": float(r.pension_net_buy or 0),
                 "personal_net_buy": float(r.personal_net_buy or 0),
+                "s1_signal": None,
+                "s1a_signal": None,
+                "s1b_signal": None,
                 "s1c_signal": None,
+                "s2_signal": None,
+                "s3_signal": None,
+                "s3a_signal": None,
+                "s4_signal": None,
+                "s4a_signal": None,
+                "s5_signal": None,
+                "ind_ma5": None,
+                "ind_ma20": None,
+                "ind_bb_ub": None,
+                "ind_bb_lb": None,
+                "ind_rsi14": None,
+                "ind_rsi_signal": None,
+                "ind_vol_ma5": None,
             }
             for r in records
         ]
 
-        if res_list:
+        if full_list:
             try:
-                df = pd.DataFrame(res_list)
+                df = pd.DataFrame(full_list)
                 if "symbol" not in df.columns or df["symbol"].isnull().any():
                     df["symbol"] = stock_code
                 if "close_price" not in df.columns:
                     df["close_price"] = df["close"]
 
-                # 오직 backend/app/services/strategies 전략 엔진 모듈에서만 시그널을 수신
-                strategy = S1cMACrossAdaptiveStrategy()
-                df_strat = strategy.calculate_indicators(df)
+                # 헬퍼 함수: 데이터프레임에서 signal_buy, signal_sell 추출 맵 생성
+                def get_sig_map(strat_obj):
+                    df_res = strat_obj.calculate_indicators(df.copy())
+                    return {
+                        str(row["date"]): ("BUY" if row.get("signal_buy", False) else ("SELL" if row.get("signal_sell", False) else None))
+                        for _, row in df_res.iterrows()
+                    }
 
-                signal_map = {}
-                for _, row in df_strat.iterrows():
-                    d_key = str(row["date"])
-                    b_sig = bool(row.get("signal_buy", False)) if "signal_buy" in df_strat.columns else False
-                    s_sig = bool(row.get("signal_sell", False)) if "signal_sell" in df_strat.columns else False
-                    signal_map[d_key] = "BUY" if b_sig else ("SELL" if s_sig else None)
+                # S3a 스퀴즈 전용 시그널 맵 추출
+                def get_s3a_sig_map(strat_obj):
+                    df_res = strat_obj.calculate_indicators(df.copy())
+                    return {
+                        str(row["date"]): ("BUY" if row.get("signal_buy_s3a", False) else ("SELL" if row.get("signal_sell_s3a", False) else None))
+                        for _, row in df_res.iterrows()
+                    }
 
-                for r_dict in res_list:
+                # S4a Signal 교차 전용 시그널 맵 추출
+                def get_s4a_sig_map(strat_obj):
+                    df_res = strat_obj.calculate_indicators(df.copy())
+                    return {
+                        str(row["date"]): ("BUY" if row.get("signal_buy_s4a", False) else ("SELL" if row.get("signal_sell_s4a", False) else None))
+                        for _, row in df_res.iterrows()
+                    }
+
+                # 헬퍼 함수: 데이터프레임에서 진짜 수치 맵 추출
+                def get_val_map(df_res, col_name):
+                    if col_name not in df_res.columns:
+                        return {}
+                    return {
+                        str(row["date"]): (float(row[col_name]) if pd.notnull(row[col_name]) else None)
+                        for _, row in df_res.iterrows()
+                    }
+
+                s1_strat = S1cMACrossAdaptiveStrategy()
+                df_s1 = s1_strat.calculate_indicators(df.copy())
+                ma5_map = get_val_map(df_s1, "sma5")
+                ma20_map = get_val_map(df_s1, "sma20")
+
+                s1a_strat = S1aMACrossVolumeStrategy()
+                df_s1a = s1a_strat.calculate_indicators(df.copy())
+                vol_ma5_map = get_val_map(df_s1a, "vol_sma5")
+
+                s1_map = get_sig_map(S1MACrossStrategy())
+                s1a_map = get_sig_map(s1a_strat)
+                s1b_map = get_sig_map(S1bMACrossLegacyStrategy())
+                s1c_map = get_sig_map(s1_strat)
+                s2_map = get_sig_map(S2BreakoutStrategy())
+                
+                s3_strat = S3BollingerStrategy()
+                df_s3 = s3_strat.calculate_indicators(df.copy())
+                bb_ub_map = get_val_map(df_s3, "bb_ub")
+                bb_lb_map = get_val_map(df_s3, "bb_lb")
+                s3_map = get_sig_map(s3_strat)
+                s3a_map = get_s3a_sig_map(s3_strat)
+                
+                s4_strat = S4RSIStrategy()
+                df_s4 = s4_strat.calculate_indicators(df.copy())
+                rsi14_map = get_val_map(df_s4, "rsi14")
+                rsi_signal_map = get_val_map(df_s4, "signal")
+                s4_map = get_sig_map(s4_strat)
+                s4a_map = get_s4a_sig_map(s4_strat)
+                
+                s5_map = get_sig_map(S5CandlePatternsStrategy())
+
+                for r_dict in full_list:
                     d_key = str(r_dict["date"])
-                    r_dict["s1c_signal"] = signal_map.get(d_key, None)
+                    r_dict["s1_signal"] = s1_map.get(d_key, None)
+                    r_dict["s1a_signal"] = s1a_map.get(d_key, None)
+                    r_dict["s1b_signal"] = s1b_map.get(d_key, None)
+                    r_dict["s1c_signal"] = s1c_map.get(d_key, None)
+                    r_dict["s2_signal"] = s2_map.get(d_key, None)
+                    r_dict["s3_signal"] = s3_map.get(d_key, None)
+                    r_dict["s3a_signal"] = s3a_map.get(d_key, None)
+                    r_dict["s4_signal"] = s4_map.get(d_key, None)
+                    r_dict["s4a_signal"] = s4a_map.get(d_key, None)
+                    r_dict["s5_signal"] = s5_map.get(d_key, None)
+
+                    r_dict["ind_ma5"] = ma5_map.get(d_key, None)
+                    r_dict["ind_ma20"] = ma20_map.get(d_key, None)
+                    r_dict["ind_bb_ub"] = bb_ub_map.get(d_key, None)
+                    r_dict["ind_bb_lb"] = bb_lb_map.get(d_key, None)
+                    r_dict["ind_rsi14"] = rsi14_map.get(d_key, None)
+                    r_dict["ind_rsi_signal"] = rsi_signal_map.get(d_key, None)
+                    r_dict["ind_vol_ma5"] = vol_ma5_map.get(d_key, None)
             except Exception as e:
                 logger.error(f"S1c 전략 시그널 연산 중 예외 발생: {e}", exc_info=True)
-                for r_dict in res_list:
-                    r_dict["s1c_signal"] = None
 
+        res_list = full_list[-limit:] if len(full_list) >= limit else full_list
         return res_list
 
     def get_top_investor_trading(self, target_date: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:

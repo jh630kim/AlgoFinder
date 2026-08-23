@@ -81,24 +81,40 @@ function initCascadeFilterControls() {
 
     if (!marketSelect || !sectorSelect || !stockSelect) return;
 
-    // 1단계: 구분 목록 백엔드 동적 로드
+    // 1단계: 구분 목록 백엔드 동적 로드 (내림차순 정렬 및 localStorage 기억 고정)
     fetch("/api/target-categories")
         .then((res) => res.json())
         .then((res) => {
-            if (res.status === "success") {
+            if (res.status === "success" && Array.isArray(res.data)) {
                 marketSelect.innerHTML = '<option value="ALL">전체 타깃</option>';
-                res.data.forEach((cat) => {
+                // 내림차순 정렬 (한국어/문자열 내림차순)
+                const sortedCategories = res.data.sort((a, b) => b.localeCompare(a, "ko"));
+                sortedCategories.forEach((cat) => {
                     const opt = document.createElement("option");
                     opt.value = cat;
                     opt.textContent = cat;
                     marketSelect.appendChild(opt);
                 });
+
+                // localStorage에 저장된 마지막 선택값 복원
+                const savedCategory = localStorage.getItem("algo_last_selected_category");
+                if (savedCategory && Array.from(marketSelect.options).some((opt) => opt.value === savedCategory)) {
+                    marketSelect.value = savedCategory;
+                }
+
+                loadSectorFilterOptions(marketSelect.value);
+            } else {
+                loadSectorFilterOptions("ALL");
             }
+        })
+        .catch(() => {
+            loadSectorFilterOptions("ALL");
         });
 
-    // 구분 변경 시 -> 2단계 업종 로드 및 3단계 종목 갱신
+    // 구분 변경 시 -> localStorage 저장 & 2단계 업종 로드 및 3단계 종목 갱신
     marketSelect.addEventListener("change", (e) => {
         const categoryVal = e.target.value;
+        localStorage.setItem("algo_last_selected_category", categoryVal);
         loadSectorFilterOptions(categoryVal);
     });
 
@@ -109,9 +125,12 @@ function initCascadeFilterControls() {
         loadFilteredTargetStocks(categoryVal, industryVal);
     });
 
-    // 종목 드롭박스 선택 변경 시 -> 검색창 종목명 자동 입력 동기화 & 차트 렌더링!
+    // 종목 드롭박스 선택 변경 시 -> localStorage 저장 & 검색창 종목명 자동 입력 동기화 & 차트 렌더링!
     stockSelect.addEventListener("change", (e) => {
         const selectedCode = e.target.value;
+        if (selectedCode) {
+            localStorage.setItem("algo_last_selected_stock", selectedCode);
+        }
         const selectedText = e.target.options[e.target.selectedIndex] ? e.target.options[e.target.selectedIndex].text : "";
         
         // "삼성전자 (005930)" -> pureName "삼성전자" 추출하여 검색창에 자동 입력!
@@ -139,7 +158,12 @@ function initCascadeFilterControls() {
             if (!query) {
                 renderStockSelectOptions(allCurrentTargetStocks);
                 if (allCurrentTargetStocks.length > 0 && stockSelect) {
-                    stockSelect.value = allCurrentTargetStocks[0].code;
+                    const savedStock = localStorage.getItem("algo_last_selected_stock");
+                    let targetStock = allCurrentTargetStocks[0];
+                    if (savedStock && allCurrentTargetStocks.some((stk) => stk.code === savedStock)) {
+                        targetStock = allCurrentTargetStocks.find((stk) => stk.code === savedStock);
+                    }
+                    stockSelect.value = targetStock.code;
                 }
                 return;
             }
@@ -152,6 +176,7 @@ function initCascadeFilterControls() {
 
             if (filtered.length > 0) {
                 stockSelect.value = filtered[0].code;
+                localStorage.setItem("algo_last_selected_stock", filtered[0].code);
                 if (window.loadAndRenderCharts) {
                     window.loadAndRenderCharts(filtered[0].code);
                 }
@@ -159,8 +184,7 @@ function initCascadeFilterControls() {
         });
     }
 
-    // 초기 실행: 전체 업종 및 종목 로드
-    loadSectorFilterOptions("ALL");
+    // 초기 실행은 백엔드 구분 로드 후 localStorage 복원값에 맞춰 연동됨
 }
 
 /** 2단계: 구분 기반 업종 옵션 백엔드 로드 */
@@ -225,11 +249,22 @@ function loadFilteredTargetStocks(categoryVal, industryVal) {
                     stockSelect.disabled = false;
                     if (inputKeyword) inputKeyword.disabled = false;
                     if (allCurrentTargetStocks.length > 0) {
-                        const firstStock = allCurrentTargetStocks[0];
-                        stockSelect.value = firstStock.code;
+                        const savedStock = localStorage.getItem("algo_last_selected_stock");
+                        let targetStock = allCurrentTargetStocks[0];
+                        if (savedStock && allCurrentTargetStocks.some((stk) => stk.code === savedStock)) {
+                            targetStock = allCurrentTargetStocks.find((stk) => stk.code === savedStock);
+                        }
+                        
+                        stockSelect.value = targetStock.code;
+                        localStorage.setItem("algo_last_selected_stock", targetStock.code);
+
+                        // 검색창 종목명 동기화
+                        if (inputKeyword && targetStock) {
+                            inputKeyword.value = targetStock.name;
+                        }
                         
                         if (window.loadAndRenderCharts) {
-                            window.loadAndRenderCharts(firstStock.code);
+                            window.loadAndRenderCharts(targetStock.code);
                         }
                     }
                 }
@@ -293,13 +328,71 @@ function fetchAndRenderAggregateChart(categoryVal, industryVal) {
         });
 }
 
-/** 7종 기술적 지표 칩 체크박스 이벤트 바인딩 */
+const STRATEGY_CHIP_IDS = [
+    "chkChipS1",
+    "chkChipS1aVol",
+    "chkChipS1bOld",
+    "chkChipS1c",
+    "chkChipS2",
+    "chkChipS3",
+    "chkChipS4",
+    "chkChipS5",
+];
+
+/** 💾 체크박스 선택 상태 localStorage 저장 */
+function saveChipStates() {
+    const stateObj = {};
+    STRATEGY_CHIP_IDS.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            stateObj[id] = el.checked;
+        }
+    });
+    try {
+        localStorage.setItem("algofinder_chip_states", JSON.stringify(stateObj));
+    } catch (e) {
+        console.warn("localStorage 저장 실패:", e);
+    }
+}
+
+/** 💾 체크박스 선택 상태 localStorage 복원 (기록 없으면 S1 기본형만 체크!) */
+function restoreChipStates() {
+    const savedStr = localStorage.getItem("algofinder_chip_states");
+    if (!savedStr) {
+        // 기록이 없으면: S1 기본형만 checked = true, 나머지 7개는 checked = false 기본 지정!
+        STRATEGY_CHIP_IDS.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.checked = (id === "chkChipS1");
+            }
+        });
+        return;
+    }
+
+    try {
+        const stateObj = JSON.parse(savedStr);
+        STRATEGY_CHIP_IDS.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el && stateObj.hasOwnProperty(id)) {
+                el.checked = Boolean(stateObj[id]);
+            }
+        });
+    } catch (e) {
+        console.warn("localStorage 복원 실패:", e);
+    }
+}
+
+/** 8종 기술적 지표 칩 체크박스 이벤트 및 로컬 저장소 복원 바인딩 */
 function initStrategyChipEvents() {
-    const chips = ["chkChipS1c", "chkChipS2", "chkChipS3", "chkChipS1Quant", "chkChipS1aVol", "chkChipS1bOld"];
-    chips.forEach((id) => {
+    // 1. 저장된 선택 상태 복원 (없으면 S1 기본형만 선택)
+    restoreChipStates();
+
+    // 2. 체크박스 change 이벤트 핸들러 연동
+    STRATEGY_CHIP_IDS.forEach((id) => {
         const el = document.getElementById(id);
         if (el) {
             el.addEventListener("change", () => {
+                saveChipStates(); // 선택 변경 시 저장
                 if (window.updateTechChartSeriesVisibility) {
                     window.updateTechChartSeriesVisibility();
                 }
@@ -312,10 +405,11 @@ function initStrategyChipEvents() {
         let allChecked = true;
         btnToggleAll.addEventListener("click", () => {
             allChecked = !allChecked;
-            chips.forEach((id) => {
+            STRATEGY_CHIP_IDS.forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.checked = allChecked;
             });
+            saveChipStates();
             if (window.updateTechChartSeriesVisibility) {
                 window.updateTechChartSeriesVisibility();
             }

@@ -53,10 +53,10 @@ class BaseStrategy(ABC):
         loss = (-delta).where(delta < 0, 0.0)
 
         avg_gain = gain.groupby(df['symbol']).transform(
-            lambda x: x.rolling(window, min_periods=1).mean()
+            lambda x: x.rolling(window, min_periods=window).mean()
         )
         avg_loss = loss.groupby(df['symbol']).transform(
-            lambda x: x.rolling(window, min_periods=1).mean()
+            lambda x: x.rolling(window, min_periods=window).mean()
         )
 
         rs = avg_gain / (avg_loss + 1e-6)
