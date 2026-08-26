@@ -49,17 +49,22 @@ function initTimeframeControlEvents() {
     }
 }
 
-/** 대시보드 상단 칩 정보 4종 로드 */
+/** 대시보드 상단 칩 정보 4종 로드 (Null 가드 안전 처리) */
 function initDashboardHeaderStats() {
     fetch("/api/market-indices")
         .then((res) => res.json())
         .then((res) => {
-            if (res.status === "success") {
+            if (res.status === "success" && res.data) {
                 const data = res.data;
-                document.getElementById("statTotalStocks").innerText = (data.total_stocks || 0).toLocaleString();
-                document.getElementById("statTotalRecords").innerText = (data.total_records || 0).toLocaleString();
-                document.getElementById("statLatestDate").innerText = data.latest_date || "-";
-                document.getElementById("statLastSyncTime").innerText = data.last_sync_time || "-";
+                const elStocks = document.getElementById("statTotalStocks");
+                const elRecords = document.getElementById("statTotalRecords");
+                const elDate = document.getElementById("statLatestDate");
+                const elSync = document.getElementById("statLastSyncTime");
+
+                if (elStocks) elStocks.innerText = (data.total_stocks || 0).toLocaleString();
+                if (elRecords) elRecords.innerText = (data.total_records || 0).toLocaleString();
+                if (elDate) elDate.innerText = data.latest_date || "-";
+                if (elSync) elSync.innerText = data.last_sync_time || "-";
             }
         })
         .catch((err) => console.error("Header stats fetch error:", err));

@@ -8,19 +8,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="pc-layout">
-        <!-- 👈 PC 좌측 고정 사이드바 -->
-        <aside class="app-sidebar-left">
-            <div class="sidebar-brand">📈 AlgoFinder</div>
-            <a href="/" class="sidebar-btn"><span>🏠 메인 대시보드</span></a>
-            <a href="/backtest" class="sidebar-btn"><span>🚀 시뮬레이션</span></a>
-            <a href="/recommendation" class="sidebar-btn"><span>🎯 모의투자</span></a>
-            <a href="/proposal" class="sidebar-btn active"><span>💡 투자제안</span></a>
-            <a href="/proposal-mobile" class="sidebar-btn" style="border-color: #a855f7; color: #c084fc;"><span>💡 투자제안(모)</span></a>
-        </aside>
+    <div class="app-layout">
+        <!-- 👈 PC 좌측 고정 220px 사이드바 -->
+        {% include 'partials/sidebar.html' %}
 
         <!-- 💡 투자제안 메인 영역 -->
-        <main class="app-main-content">
+        <main class="main-content">
             <!-- 📌 당일전용 스티키 컨트롤 바 (StockInfo 참고) -->
             <section class="card sticky-control-bar">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">

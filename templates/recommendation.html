@@ -8,19 +8,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="pc-layout">
-        <!-- 👈 PC 좌측 고정 사이드바 -->
-        <aside class="app-sidebar-left">
-            <div class="sidebar-brand">📈 AlgoFinder</div>
-            <a href="/" class="sidebar-btn"><span>🏠 메인 대시보드</span></a>
-            <a href="/backtest" class="sidebar-btn"><span>🚀 시뮬레이션</span></a>
-            <a href="/recommendation" class="sidebar-btn active"><span>🎯 모의투자</span></a>
-            <a href="/proposal" class="sidebar-btn"><span>💡 투자제안</span></a>
-            <a href="/proposal-mobile" class="sidebar-btn" style="border-color: #a855f7; color: #c084fc;"><span>💡 투자제안(모)</span></a>
-        </aside>
+    <div class="app-layout">
+        <!-- 👈 PC 좌측 고정 220px 사이드바 -->
+        {% include 'partials/sidebar.html' %}
 
         <!-- 🎯 모의투자 메인 영역 -->
-        <main class="app-main-content">
+        <main class="main-content">
             <header class="card">
                 <h1 style="font-size: 24px; font-weight: 800; color: #f8fafc; margin: 0 0 6px 0;">🎯 AI 퀀트 전략별 실시간 모의투자 분석실</h1>
                 <p style="color: #94a3b8; font-size: 13.5px; margin: 0;">추천 기준일 시점의 전략별 TOP 1~3위 매수 포착 종목을 20% 분할 매수하여 1,000만원 자산 포트폴리오를 실시간 검증합니다.</p>

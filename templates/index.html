@@ -9,14 +9,13 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-    <script src="{{ url_for('static', filename='js/load_sidebar.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chart.js') }}"></script>
 </head>
 <body>
     <div class="app-layout">
         <!-- 좌측 사이드바 (사이드바 고정 220px) -->
-        <aside class="sidebar" id="sidebarNav"></aside>
+        {% include 'partials/sidebar.html' %}
 
         <!-- 메인 콘텐츠 영역 -->
         <main class="main-content">

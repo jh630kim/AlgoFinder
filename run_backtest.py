@@ -42,18 +42,17 @@ def main() -> None:
     )
     parser.add_argument(
         "--target",
-        default="ALL",
-        help="투자 대상 군 선택 (콤마 구분: KOSPI200,KOSDAQ150,ETF_USA 또는 ALL, 기본값: ALL)"
+        default="KOSPI 200,KOSDAQ 150",
+        help="투자 대상 군 선택 (콤마 구분: KOSPI 200,KOSDAQ 150, 기본값: KOSPI 200,KOSDAQ 150)"
     )
     parser.add_argument("--start", help="시뮬레이션 시작일자 (YYYYMMDD, 미지정 시 최근 1년)")
     parser.add_argument("--end", help="시뮬레이션 종료일자 (YYYYMMDD, 미지정 시 오늘)")
 
     args = parser.parse_args()
 
-    # 투자 대상 군 파싱
     target_str = args.target.upper()
     if target_str == "ALL":
-        target_sectors = ["KOSPI 200", "KOSDAQ 150", "ETF_USA"]
+        target_sectors = ["KOSPI 200", "KOSDAQ 150"]
     else:
         raw_targets = [t.strip() for t in target_str.split(",") if t.strip()]
         target_sectors = []

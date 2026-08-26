@@ -52,7 +52,8 @@ class StrategyTradeLogsRepository:
                 profit_pct=item.get("profit_pct", 0.0),
                 profit_krw=item.get("profit_krw", 0.0),
                 prob_up=item.get("prob_up", 0.0),
-                strategy_tag=item.get("strategy_tag")
+                strategy_tag=item.get("strategy_tag"),
+                slot_no=item.get("slot_no", 0)
             )
             for item in logs_list
         ]

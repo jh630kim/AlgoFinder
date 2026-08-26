@@ -17,6 +17,7 @@ from backend.app.models.investor_trading_daily import InvestorTradingDaily
 from backend.app.models.all_stock_master import AllStockMaster
 from backend.app.repositories.strategy_leaderboard_repository import StrategyLeaderboardRepository
 from backend.app.repositories.strategy_trade_logs_repository import StrategyTradeLogsRepository
+from backend.app.repositories.strategy_daily_equity_repository import StrategyDailyEquityRepository
 
 from backend.app.services.strategies.s1_ma_cross import S1MACrossStrategy
 from backend.app.services.strategies.s1a_ma_cross_volume import S1aMACrossVolumeStrategy
@@ -61,6 +62,7 @@ class BacktestEngine:
         self.session = session
         self.leaderboard_repo = StrategyLeaderboardRepository(session)
         self.trade_logs_repo = StrategyTradeLogsRepository(session)
+        self.daily_equity_repo = StrategyDailyEquityRepository(session)
         self._df_cache = None
         self._cached_sectors = None
 
@@ -70,6 +72,8 @@ class BacktestEngine:
         if self._df_cache is not None and self._cached_sectors == sectors_key:
             return self._df_cache
 
+        from backend.app.models.target_stocks import TargetStocks
+
         query = self.session.query(
             InvestorTradingDaily.symbol, InvestorTradingDaily.date,
             InvestorTradingDaily.open_price, InvestorTradingDaily.high_price,
@@ -77,7 +81,8 @@ class BacktestEngine:
             InvestorTradingDaily.volume, InvestorTradingDaily.personal_net_buy,
             InvestorTradingDaily.foreigner_net_buy, InvestorTradingDaily.institution_net_buy,
             AllStockMaster.name, AllStockMaster.sector
-        ).join(AllStockMaster, InvestorTradingDaily.symbol == AllStockMaster.code)
+        ).join(AllStockMaster, InvestorTradingDaily.symbol == AllStockMaster.code) \
+         .join(TargetStocks, InvestorTradingDaily.symbol == TargetStocks.symbol)
 
         if target_sectors and "ALL" not in [t.upper() for t in target_sectors]:
             query = query.filter(AllStockMaster.sector.in_(target_sectors))
@@ -100,7 +105,7 @@ class BacktestEngine:
 
         combo_name, strat_keys = STRATEGY_COMBOS[combo_id]
         if not target_sectors:
-            target_sectors = ["KOSPI 200", "KOSDAQ 150", "ETF_USA"]
+            target_sectors = ["KOSPI 200", "KOSDAQ 150"]
 
         df_raw = self.load_market_dataframe(target_sectors)
         if df_raw.empty:
@@ -113,7 +118,7 @@ class BacktestEngine:
             start_date = (today_dt - timedelta(days=365)).strftime("%Y%m%d")
 
         processed_dfs = [STRATEGY_MAP[k].calculate_indicators(df_raw) for k in strat_keys]
-        metrics, logs = self._simulate_trading(
+        metrics, logs, equity_logs = self._simulate_trading(
             combo_id, processed_dfs, initial_capital, max_slots, start_date, end_date
         )
 
@@ -125,18 +130,21 @@ class BacktestEngine:
         })
         self.trade_logs_repo.clear_logs_by_combo(combo_id)
         self.trade_logs_repo.bulk_insert_trade_logs(logs)
+        
+        self.daily_equity_repo.clear_equity_by_combo(combo_id)
+        self.daily_equity_repo.bulk_insert_daily_equity(equity_logs)
 
         return {"combo_id": combo_id, "combo_name": combo_name, "metrics": metrics, "log_count": len(logs)}
 
     def _simulate_trading(
         self, combo_id: int, dfs: List[pd.DataFrame], initial_capital: float,
         max_slots: int, start_date: str, end_date: str
-    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
         """D-1 신호 포착 ➔ D-0 종가 체결 시뮬레이션을 딕셔너리 고속 룩업으로 연산합니다."""
         dates = sorted(dfs[0]["date"].unique())
         sim_dates = [d for d in dates if start_date <= d <= end_date]
         if not sim_dates:
-            return self._empty_metrics(initial_capital), []
+            return self._empty_metrics(initial_capital), [], []
 
         # 고속 룩업용 딕셔너리 빌드: (symbol, date) -> dict_row
         dict_maps = []
@@ -146,13 +154,18 @@ class BacktestEngine:
 
         all_symbols = sorted(dfs[0]["symbol"].unique())
         cash = initial_capital
-        positions = {}  # symbol -> {shares, buy_price, buy_date, prob_up, name, holding_days}
+        positions = {}  # symbol -> {shares, buy_price, buy_date, prob_up, name, holding_days, slot_no}
         logs = []
         equity_curve = []
+        equity_logs = []
         closed_trades = []
 
-        date_to_idx = {d: i for i, d in enumerate(dates)}
+        # 슬롯 추적: 포트폴리오 자리 번호(1~max_slots)를 종목 매수/매도 쌍에 할당
+        available_slots = set(range(1, max_slots + 1))  # {1, 2, 3}
+        symbol_to_slot = {}  # symbol -> slot_no
 
+        date_to_idx = {d: i for i, d in enumerate(dates)}
+        portfolio_snapshots = {}
         for d in sim_dates:
             d_idx = date_to_idx.get(d, 0)
             if d_idx == 0:
@@ -183,12 +196,17 @@ class BacktestEngine:
                         curr_equity = cash + sum(p["shares"] * sell_price for p in positions.values() if p != pos)
                         cum_ret = (curr_equity - initial_capital) / initial_capital * 100.0
 
+                        # 슬롯 번호 조회 후 반환
+                        sold_slot = symbol_to_slot.pop(sym, 0)
+                        available_slots.add(sold_slot)
+
                         logs.append({
                             "combo_id": combo_id, "trade_date": d, "symbol": sym, "name": pos["name"],
                             "trade_type": "SELL", "holding_days": pos["holding_days"], "shares": pos["shares"],
                             "unit_price": sell_price, "total_amount": revenue, "equity_after_trade": curr_equity,
                             "cum_return_pct": round(cum_ret, 2), "profit_pct": round(profit_pct, 2),
-                            "profit_krw": round(profit_krw, 0), "prob_up": pos["prob_up"], "strategy_tag": "SELL"
+                            "profit_krw": round(profit_krw, 0), "prob_up": pos["prob_up"],
+                            "strategy_tag": "SELL", "slot_no": sold_slot
                         })
                         symbols_to_sell.append(sym)
 
@@ -232,9 +250,16 @@ class BacktestEngine:
                             if shares > 0 and cash >= (shares * buy_price):
                                 cost = shares * buy_price
                                 cash -= cost
+
+                                # 슬롯 배정: 사용 가능한 슬롯 중 가장 작은 번호 부여
+                                new_slot = min(available_slots) if available_slots else 0
+                                available_slots.discard(new_slot)
+                                symbol_to_slot[b_item["symbol"]] = new_slot
+
                                 positions[b_item["symbol"]] = {
                                     "shares": shares, "buy_price": buy_price, "buy_date": d,
-                                    "prob_up": b_item["prob_up"], "name": b_item["name"], "holding_days": 0
+                                    "prob_up": b_item["prob_up"], "name": b_item["name"],
+                                    "holding_days": 0, "slot_no": new_slot
                                 }
                                 curr_eq_after = cash + cost + sum(p["shares"] * p["buy_price"] for s, p in positions.items() if s != b_item["symbol"])
                                 cum_ret_b = (curr_eq_after - initial_capital) / initial_capital * 100.0
@@ -243,16 +268,50 @@ class BacktestEngine:
                                     "name": b_item["name"], "trade_type": "BUY", "holding_days": 0,
                                     "shares": shares, "unit_price": buy_price, "total_amount": cost,
                                     "equity_after_trade": curr_eq_after, "cum_return_pct": round(cum_ret_b, 2),
-                                    "profit_pct": 0.0, "profit_krw": 0.0, "prob_up": b_item["prob_up"], "strategy_tag": "BUY"
+                                    "profit_pct": 0.0, "profit_krw": 0.0, "prob_up": b_item["prob_up"],
+                                    "strategy_tag": "BUY", "slot_no": new_slot
                                 })
 
-            # 당일 총 평가 자산 기록
-            day_equity = cash + sum(
-                p["shares"] * float(dict_maps[0].get((s, d), {}).get("close_price", p["buy_price"]))
-                for s, p in positions.items()
-            )
-            equity_curve.append(day_equity)
+            portfolio_snapshots[d] = {
+                "cash": cash,
+                "holdings": {sym: pos["shares"] for sym, pos in positions.items()}
+            }
 
+        # Phase 2: 일별 자산 계산 (market_indices_daily 기준)
+        from backend.app.models.market_indices_daily import MarketIndicesDaily
+        market_dates = [
+            r.date for r in self.session.query(MarketIndicesDaily.date)
+            .filter(MarketIndicesDaily.date >= start_date, MarketIndicesDaily.date <= end_date)
+            .order_by(MarketIndicesDaily.date.asc()).all()
+        ]
+        
+        current_cash = initial_capital
+        current_holdings = {}
+        last_close_prices = {}
+        
+        # 만약 market_dates가 비어있다면, sim_dates라도 사용
+        calc_dates = market_dates if market_dates else sim_dates
+
+        for md in calc_dates:
+            if md in portfolio_snapshots:
+                current_cash = portfolio_snapshots[md]["cash"]
+                current_holdings = portfolio_snapshots[md]["holdings"]
+            
+            day_equity = current_cash
+            for sym, shares in current_holdings.items():
+                price = float(dict_maps[0].get((sym, md), {}).get("close_price", 0.0))
+                if price > 0:
+                    last_close_prices[sym] = price
+                else:
+                    price = last_close_prices.get(sym, 0.0)
+                day_equity += shares * price
+            
+            equity_curve.append(day_equity)
+            equity_logs.append({
+                "combo_id": combo_id,
+                "trade_date": md,
+                "equity_amount": day_equity
+            })
         final_cap = equity_curve[-1] if equity_curve else initial_capital
         tot_ret = (final_cap - initial_capital) / initial_capital * 100.0
         win_rate = (len([t for t in closed_trades if t > 0]) / len(closed_trades) * 100.0) if closed_trades else 0.0
@@ -262,7 +321,7 @@ class BacktestEngine:
             "final_capital": round(final_cap, 0), "total_return_pct": round(tot_ret, 2),
             "win_rate_pct": round(win_rate, 2), "mdd_pct": round(mdd, 2), "total_trades": len(logs)
         }
-        return metrics, logs
+        return metrics, logs, equity_logs
 
     def _calc_mdd(self, equity_curve: List[float]) -> float:
         """평가 자산 곡선으로부터 최고점 대비 최대 낙폭(MDD %)을 산출합니다."""

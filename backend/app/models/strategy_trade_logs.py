@@ -46,6 +46,8 @@ class StrategyTradeLogs(Base):
     # AI 상승확률 및 전략 태그
     prob_up = Column(Float, default=0.0, comment="AI 상승확률(%)")
     strategy_tag = Column(String(20), nullable=True, comment="전략 태그(S1~S5)")
+    # 포트폴리오 슬롯 번호 (1 ~ max_slots): 동일 종목 매수/매도 쌍을 시각적으로 추적
+    slot_no = Column(Integer, default=0, comment="포트폴리오 슬롯 번호(1~3)")
 
     # 등록 일시
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), comment="등록일시")

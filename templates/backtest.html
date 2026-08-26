@@ -4,23 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StockInfo PRO - 20년 백테스트 & 실전 매매일지 분석실</title>
+    <link rel="shortcut icon" href="#">
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
 </head>
 <body>
-    <div class="pc-layout">
-        <!-- 👈 PC 좌측 고정 사이드바 -->
-        <aside class="app-sidebar-left">
-            <div class="sidebar-brand">📈 AlgoFinder</div>
-            <a href="/" class="sidebar-btn"><span>🏠 메인 대시보드</span></a>
-            <a href="/backtest" class="sidebar-btn active"><span>🚀 시뮬레이션</span></a>
-            <a href="/recommendation" class="sidebar-btn"><span>🎯 모의투자</span></a>
-            <a href="/proposal" class="sidebar-btn"><span>💡 투자제안</span></a>
-            <a href="/proposal-mobile" class="sidebar-btn" style="border-color: #a855f7; color: #c084fc;"><span>💡 투자제안(모)</span></a>
-        </aside>
+    <div class="app-layout">
+        <!-- 👈 PC 좌측 고정 220px 사이드바 -->
+        {% include 'partials/sidebar.html' %}
 
         <!-- 🖥️ 시뮬레이션 메인 영역 -->
-        <main class="app-main-content">
+        <main class="main-content">
             <header class="card">
                 <h1 style="font-size: 22px; font-weight: 800; color: #38bdf8; margin: 0 0 6px 0;">📊 20년 백테스트 & 실전 매매일지 분석실</h1>
                 <p style="font-size: 13px; color: #94a3b8; margin: 0;">1,000만 원 포트폴리오 기준 31대 퀀트 전략 시뮬레이션 및 실제 매수/매도 복기</p>
@@ -36,15 +32,24 @@
                         <option value="S2">🥉 3위: S2 (+112.50%)</option>
                     </select>
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="color: #cbd5e1; font-weight: 700; font-size: 14px;">📅 백테스트 시뮬레이션 기간:</label>
                     <select id="backtestRangeSelect" style="background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;">
                         <option value="6m">최근 6개월</option>
                         <option value="1y">최근 1년</option>
-                        <option value="3y" selected>최근 3년 (기본)</option>
+                        <option value="3y">최근 3년</option>
                         <option value="5y">최근 5년</option>
                         <option value="all">전체 (20년)</option>
+                        <option value="custom">📅 직접 기간 선택 (사용자 지정)</option>
                     </select>
+
+                    <!-- 📅 사용자 직접 날짜 지정 피커 박스 -->
+                    <div id="customDateBox" style="display: none; align-items: center; gap: 8px; background: rgba(30, 41, 59, 0.8); padding: 4px 10px; border-radius: 8px; border: 1px solid #3b82f6;">
+                        <input type="date" id="startDatePicker" style="background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700;">
+                        <span style="color: #94a3b8; font-weight: 700;">~</span>
+                        <input type="date" id="endDatePicker" style="background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700;">
+                        <button id="btnRunCustomBacktest" style="background: linear-gradient(135deg, #0284c7, #2563eb); color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; font-size: 12px; cursor: pointer;">🚀 시뮬레이션 실행</button>
+                    </div>
                 </div>
             </section>
 
@@ -52,27 +57,53 @@
             <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px;">
                 <div class="card" style="text-align: center; margin: 0;">
                     <div style="font-size: 12px; color: #94a3b8;">전략 조합명</div>
-                    <div style="font-size: 20px; font-weight: 800; color: #38bdf8;">S4</div>
+                    <div id="kpiStrategyName" style="font-size: 20px; font-weight: 800; color: #38bdf8;">S4</div>
                 </div>
                 <div class="card" style="text-align: center; margin: 0;">
                     <div style="font-size: 12px; color: #94a3b8;">최종 자산 평가액</div>
-                    <div style="font-size: 18px; font-weight: 800; color: #d4af37;">28,372,278 원</div>
+                    <div id="kpiEvalAmount" style="font-size: 18px; font-weight: 800; color: #d4af37;">28,372,278 원</div>
                 </div>
                 <div class="card" style="text-align: center; margin: 0;">
                     <div style="font-size: 12px; color: #94a3b8;">백테스트 기간 수익률</div>
-                    <div style="font-size: 20px; font-weight: 800; color: #00ff87;">+183.72%</div>
+                    <div id="kpiReturnRate" style="font-size: 20px; font-weight: 800; color: #00ff87;">+183.72%</div>
                 </div>
                 <div class="card" style="text-align: center; margin: 0;">
                     <div style="font-size: 12px; color: #94a3b8;">실제 거래 승률</div>
-                    <div style="font-size: 20px; font-weight: 800; color: #a855f7;">63.71%</div>
+                    <div id="kpiWinRate" style="font-size: 20px; font-weight: 800; color: #a855f7;">63.71%</div>
                 </div>
                 <div class="card" style="text-align: center; margin: 0;">
                     <div style="font-size: 12px; color: #94a3b8;">최대 낙폭 (MDD)</div>
-                    <div style="font-size: 20px; font-weight: 800; color: #ef4444;">-56.03%</div>
+                    <div id="kpiMdd" style="font-size: 20px; font-weight: 800; color: #ef4444;">-56.03%</div>
                 </div>
                 <div class="card" style="text-align: center; margin: 0;">
                     <div style="font-size: 12px; color: #94a3b8;">총 거래 횟수</div>
-                    <div style="font-size: 20px; font-weight: 800; color: #fff;">394회</div>
+                    <div id="kpiTradeCount" style="font-size: 20px; font-weight: 800; color: #fff;">394회</div>
+                </div>
+            </section>
+
+            <!-- 📈 백테스트 누적 자산 & 코스피 지수 비교 차트 -->
+            <section class="card mb-4" style="margin-bottom: 24px; position: relative;">
+                <!-- ⏳ 시뮬레이션 재연산 로딩 오버레이 진행바 -->
+                <div id="backtestLoadingOverlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.88); z-index: 20; flex-direction: column; align-items: center; justify-content: center; border-radius: 12px; backdrop-filter: blur(4px);">
+                    <div style="font-size: 15px; font-weight: 800; color: #38bdf8; margin-bottom: 14px; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 20px;">⏳</span>
+                        <span id="progressMessageText">21개 퀀트 전략 백테스트 시뮬레이션 재연산 중...</span>
+                    </div>
+                    <div style="width: 320px; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                        <div id="backtestProgressBar" style="width: 45%; height: 100%; background: linear-gradient(90deg, #38bdf8, #818cf8, #a855f7); border-radius: 4px; transition: width 0.4s ease;"></div>
+                    </div>
+                    <span style="font-size: 12px; color: #94a3b8; margin-top: 10px;">지정된 기간 동안의 21개 전략 자산 곡선 및 KOSPI 지수 데이터를 수집합니다</span>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; min-height: 48px;">
+                    <div>
+                        <h3 style="margin: 0 0 4px 0; color: #38bdf8; font-size: 16px; font-weight: 800;">📈 백테스트 1,000만 원 포트폴리오 누적 자산 & 코스피 지수 비교 추이</h3>
+                        <p style="margin: 0; font-size: 12px; color: #94a3b8;">초기 1,000만 원 투자 시 백테스트 기간 자산 성장 곡선 (왼쪽: 만원/원, 오른쪽: 코스피pt)</p>
+                    </div>
+                    <div id="chartHoverOverlay" style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.4); padding: 6px 14px; border-radius: 8px; font-size: 12px; color: #cbd5e1; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;"></div>
+                </div>
+                <div style="position: relative; width: 100%; height: 360px;">
+                    <canvas id="backtestAssetChart"></canvas>
                 </div>
             </section>
 
@@ -80,11 +111,11 @@
             <section class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                     <h3 style="margin: 0; color: #38bdf8; font-size: 16px; font-weight: 800;">📋 백테스트 실제 매매 복기 일지 (Buy / Sell 상세 내역)</h3>
-                    <span style="font-size: 12px; background: #0284c7; padding: 4px 10px; border-radius: 12px; font-weight: 700; color: #fff;">총 788 건</span>
+                    <span id="lblTotalTradeCount" style="font-size: 12px; background: #0284c7; padding: 4px 10px; border-radius: 12px; font-weight: 700; color: #fff;">총 0 건</span>
                 </div>
-                <div style="overflow-x: auto;">
+                <div style="overflow-x: auto; max-height: 440px; overflow-y: auto;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">
-                        <thead>
+                        <thead style="position: sticky; top: 0; background: #1e293b; z-index: 10;">
                             <tr style="background: rgba(30, 41, 59, 0.9); color: #94a3b8;">
                                 <th style="padding: 10px;">체결일자</th>
                                 <th style="padding: 10px;">종목명 (코드)</th>
@@ -94,32 +125,10 @@
                                 <th style="padding: 10px;">체결단가</th>
                                 <th style="padding: 10px;">총 거래금액</th>
                                 <th style="padding: 10px;">체결 후 누적자산 (수익률)</th>
-                                <th style="padding: 10px;">실현 손익률 (손익금액)</th>
+                                <th style="padding: 10px;">손익 (수익률)</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <td style="padding: 10px;">2014-06-12</td>
-                                <td style="padding: 10px; font-weight: 700; color: #38bdf8;">솔브레인홀딩스 (036830)</td>
-                                <td style="padding: 10px;"><span style="background: #10b981; color: #fff; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px;">매수S4</span></td>
-                                <td style="padding: 10px;">1일</td>
-                                <td style="padding: 10px;">59주</td>
-                                <td style="padding: 10px; color: #38bdf8;">33,400 원</td>
-                                <td style="padding: 10px; color: #d4af37; font-weight: 700;">1,970,600 원</td>
-                                <td style="padding: 10px;">10,000,000원 (+0%)</td>
-                                <td style="padding: 10px; color: #94a3b8;">-</td>
-                            </tr>
-                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                <td style="padding: 10px;">2014-06-26</td>
-                                <td style="padding: 10px; font-weight: 700; color: #38bdf8;">솔브레인홀딩스 (036830)</td>
-                                <td style="padding: 10px;"><span style="background: #ec4899; color: #fff; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px;">매도S4</span></td>
-                                <td style="padding: 10px;">10일</td>
-                                <td style="padding: 10px;">59주</td>
-                                <td style="padding: 10px; color: #ef4444;">35,900 원</td>
-                                <td style="padding: 10px; color: #d4af37; font-weight: 700;">2,118,100 원</td>
-                                <td style="padding: 10px;">9,503,458원 (-4.97%)</td>
-                                <td style="padding: 10px; color: #00ff87; font-weight: 700;">+7.16% (+141,367원)</td>
-                            </tr>
+                        <tbody id="tradeLogsBody">
                         </tbody>
                     </table>
                 </div>
@@ -129,5 +138,476 @@
 
     <script src="/static/js/app.js"></script>
     <script src="/static/js/chart.js"></script>
+    <script>
+        let backtestAssetChartInstance = null;
+        let cachedLeaderboard = [];
+        let cachedTradeLogs = [];
+        let cachedTradeEvents = {};  // 전략별 매수/매도 마커 이벤트
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const stratSelect = document.getElementById("strategyRankSelect");
+            const rangeSelect = document.getElementById("backtestRangeSelect");
+            const customBox = document.getElementById("customDateBox");
+            const btnCustom = document.getElementById("btnRunCustomBacktest");
+            const startDatePicker = document.getElementById("startDatePicker");
+            const endDatePicker = document.getElementById("endDatePicker");
+
+            // 기본 날짜 피커 값 설정 (2021-01-01 ~ 2023-12-31)
+            if (startDatePicker && !startDatePicker.value) startDatePicker.value = "2021-01-01";
+            if (endDatePicker && !endDatePicker.value) endDatePicker.value = "2023-12-31";
+
+            // localStorage 복원 삭제: 서버 상태 기준으로 맞춤
+            if (rangeSelect) {
+                if (rangeSelect.value === "custom" && customBox) customBox.style.display = "flex";
+            }
+
+            loadBacktestChartData();
+
+            if (stratSelect) {
+                stratSelect.addEventListener("change", () => {
+                    const selectedStrat = stratSelect.value;
+                    localStorage.setItem("algo_last_strategy", selectedStrat);
+                    updateKpiCards(selectedStrat);
+                    renderTradeLogsTable(selectedStrat);
+                    if (window.cachedChartData) {
+                        renderBacktestAssetChart(window.cachedChartData);
+                    }
+                });
+            }
+
+            if (rangeSelect) {
+                rangeSelect.addEventListener("change", () => {
+                    if (rangeSelect.value === "custom") {
+                        if (customBox) customBox.style.display = "flex";
+                    } else {
+                        if (customBox) customBox.style.display = "none";
+                        runBacktestEngine();
+                    }
+                });
+            }
+
+            if (btnCustom) {
+                btnCustom.addEventListener("click", () => {
+                    runBacktestEngine();
+                });
+            }
+        });
+
+        function showLoadingOverlay() {
+            const overlay = document.getElementById("backtestLoadingOverlay");
+            const progressBar = document.getElementById("backtestProgressBar");
+            if (overlay) overlay.style.display = "flex";
+            if (progressBar) {
+                progressBar.style.width = "20%";
+                setTimeout(() => { progressBar.style.width = "75%"; }, 150);
+            }
+        }
+
+        function hideLoadingOverlay() {
+            const overlay = document.getElementById("backtestLoadingOverlay");
+            const progressBar = document.getElementById("backtestProgressBar");
+            if (progressBar) progressBar.style.width = "100%";
+            setTimeout(() => {
+                if (overlay) overlay.style.display = "none";
+            }, 250);
+        }
+
+        function updateProgressBarText(text) {
+            const msgEl = document.getElementById("progressMessageText");
+            if (msgEl) msgEl.textContent = text;
+        }
+
+        function runBacktestEngine() {
+            const rangeSelect = document.getElementById("backtestRangeSelect");
+            const periodVal = rangeSelect ? rangeSelect.value : "3y";
+            const startDate = document.getElementById("startDatePicker") ? document.getElementById("startDatePicker").value : "";
+            const endDate = document.getElementById("endDatePicker") ? document.getElementById("endDatePicker").value : "";
+
+            const payload = { period: periodVal };
+            if (periodVal === "custom" && startDate && endDate) {
+                payload.start_date = startDate;
+                payload.end_date = endDate;
+            }
+
+            showLoadingOverlay();
+            updateProgressBarText("백테스트 준비 중...");
+            
+            const progressBar = document.getElementById("backtestProgressBar");
+            if (progressBar) progressBar.style.width = "5%";
+
+            // 폴링 시작
+            const pollInterval = setInterval(() => {
+                fetch("/api/backtest-progress")
+                    .then(r => r.json())
+                    .then(data => {
+                        updateProgressBarText(data.message || "연산 중...");
+                        if (progressBar && data.total > 0) {
+                            let pct = (data.completed / data.total) * 100;
+                            if (pct < 5) pct = 5;
+                            progressBar.style.width = pct + "%";
+                        }
+                    }).catch(err => console.error("Progress poll err:", err));
+            }, 1000);
+
+            fetch("/api/backtest-run", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json())
+            .then(res => {
+                clearInterval(pollInterval);
+                if (progressBar) progressBar.style.width = "100%";
+                updateProgressBarText("데이터를 갱신 중입니다...");
+                setTimeout(() => {
+                    loadBacktestChartData();
+                }, 500);
+            })
+            .catch(err => {
+                clearInterval(pollInterval);
+                hideLoadingOverlay();
+                console.error("Backtest run error:", err);
+                alert("백테스트 실행 중 오류가 발생했습니다.");
+            });
+        }
+
+        function loadBacktestChartData() {
+            showLoadingOverlay();
+            updateProgressBarText("결과 렌더링 중...");
+
+            let apiUrl = `/api/backtest-leaderboard`;
+
+            fetch(apiUrl)
+                .then((res) => res.json())
+                .then((res) => {
+                    if (res.status === "success") {
+                        if (res.period) {
+                            const rangeSelect = document.getElementById("backtestRangeSelect");
+                            if (rangeSelect && rangeSelect.value !== "custom") {
+                                rangeSelect.value = res.period;
+                            }
+                        }
+                        if (Array.isArray(res.leaderboard)) {
+                            cachedLeaderboard = res.leaderboard;
+                            updateStrategyDropdown(res.leaderboard);
+                        }
+                        if (res.trade_logs && typeof res.trade_logs === "object") {
+                            cachedTradeLogs = res.trade_logs;
+                        }
+                        if (res.chart_trade_events && typeof res.chart_trade_events === "object") {
+                            cachedTradeEvents = res.chart_trade_events;
+                        }
+                        if (Array.isArray(res.chart_data)) {
+                            window.cachedChartData = res.chart_data;
+                            renderBacktestAssetChart(res.chart_data);
+                        }
+                        
+                        const selectedStrat = document.getElementById("strategyRankSelect") ? document.getElementById("strategyRankSelect").value : "S4";
+                        updateKpiCards(selectedStrat);
+                        renderTradeLogsTable(selectedStrat);
+                    }
+                })
+                .catch((err) => console.error("Backtest chart fetch error:", err))
+                .finally(() => {
+                    hideLoadingOverlay();
+                });
+        }
+
+        function updateStrategyDropdown(leaderboard) {
+            const stratSelect = document.getElementById("strategyRankSelect");
+            if (!stratSelect || !leaderboard || leaderboard.length === 0) return;
+
+            stratSelect.innerHTML = "";
+
+            leaderboard.forEach((stk) => {
+                const opt = document.createElement("option");
+                opt.value = stk.strategy;
+                const rankIcon = stk.rank === 1 ? "🥇 " : (stk.rank === 2 ? "🥈 " : (stk.rank === 3 ? "🥉 " : ""));
+                const retStr = stk.return_rate >= 0 ? `+${stk.return_rate}%` : `${stk.return_rate}%`;
+                opt.textContent = `${rankIcon}${stk.rank}위: ${stk.name} (${retStr})`;
+                stratSelect.appendChild(opt);
+            });
+
+            // 항시 1위 전략(리더보드 첫 번째 항목)이 기본 선택되도록 설정
+            stratSelect.value = leaderboard[0].strategy;
+        }
+
+        function updateKpiCards(stratKey) {
+            if (!cachedLeaderboard || cachedLeaderboard.length === 0) return;
+            const target = cachedLeaderboard.find((s) => s.strategy === stratKey) || cachedLeaderboard[0];
+            if (!target) return;
+
+            const elName = document.getElementById("kpiStrategyName");
+            const elAmount = document.getElementById("kpiEvalAmount");
+            const elReturn = document.getElementById("kpiReturnRate");
+            const elWin = document.getElementById("kpiWinRate");
+            const elMdd = document.getElementById("kpiMdd");
+            const elTrade = document.getElementById("kpiTradeCount");
+
+            if (elName) elName.textContent = target.strategy;
+            if (elAmount) elAmount.textContent = `${target.eval_amount.toLocaleString()} 원`;
+            if (elReturn) {
+                const isPos = target.return_rate >= 0;
+                elReturn.textContent = isPos ? `+${target.return_rate}%` : `${target.return_rate}%`;
+                elReturn.style.color = isPos ? "#00ff87" : "#ef4444";
+            }
+            if (elWin) elWin.textContent = `${target.win_rate}%`;
+            if (elMdd) elMdd.textContent = `${target.mdd}%`;
+            if (elTrade) elTrade.textContent = `${target.trade_count}회`;
+        }
+
+        function renderTradeLogsTable(stratKey) {
+            const tbody = document.getElementById("tradeLogsBody");
+            const lblCount = document.getElementById("lblTotalTradeCount");
+            if (!tbody) return;
+
+            tbody.innerHTML = "";
+            let logsToDisplay = [];
+            if (cachedTradeLogs && typeof cachedTradeLogs === "object") {
+                if (Array.isArray(cachedTradeLogs[stratKey])) {
+                    logsToDisplay = cachedTradeLogs[stratKey];
+                } else if (Array.isArray(cachedTradeLogs)) {
+                    logsToDisplay = cachedTradeLogs;
+                }
+            }
+
+            if (lblCount) {
+                lblCount.textContent = `총 ${logsToDisplay.length} 건`;
+            }
+
+            logsToDisplay.forEach((log) => {
+                const tr = document.createElement("tr");
+                tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+                
+                const isBuy = log.type && log.type.includes("매수");
+                const badgeColor = isBuy ? "#10b981" : "#ec4899";
+                const pnlColor = log.pnl && log.pnl.startsWith("+") ? "#00ff87" : (log.pnl && log.pnl.startsWith("-") ? "#ef4444" : "#94a3b8");
+
+                tr.innerHTML = `
+                    <td style="padding: 10px;">${log.date}</td>
+                    <td style="padding: 10px; font-weight: 700; color: #38bdf8;">${log.name} (${log.code})</td>
+                    <td style="padding: 10px;"><span style="background: ${badgeColor}; color: #fff; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px;">${log.type}</span></td>
+                    <td style="padding: 10px;">${log.days}</td>
+                    <td style="padding: 10px;">${log.quantity}주</td>
+                    <td style="padding: 10px; color: ${isBuy ? "#38bdf8" : "#ef4444"};">${log.price.toLocaleString()} 원</td>
+                    <td style="padding: 10px; color: #d4af37; font-weight: 700;">${log.total.toLocaleString()} 원</td>
+                    <td style="padding: 10px;">${log.cum_asset}</td>
+                    <td style="padding: 10px; color: ${pnlColor}; font-weight: 700;">${log.pnl}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderBacktestAssetChart(chartData) {
+            const canvas = document.getElementById("backtestAssetChart");
+            if (!canvas) return;
+
+            const dates = chartData.map((d) => d.date);
+            const kospiCloses = chartData.map((d) => d.kospi_close);
+            const kospiMa20 = chartData.map((d) => d.kospi_ma20);
+
+            // 선택된 백테스트 전략
+            const selectedStrat = document.getElementById("strategyRankSelect") ? document.getElementById("strategyRankSelect").value : "S4";
+            
+            // 백엔드에서 100% 정밀 연산된 일별 평가자산 시계열 (cash + hold_stocks * close_price)
+            const assetHistory = chartData.map(d => {
+                const assets = d.strategy_assets || {};
+                return assets[selectedStrat] !== undefined ? assets[selectedStrat] : 10000000;
+            });
+
+            // 슬롯별 색상 정의 (매수▲/매도▽ 동일 색상)
+            const SLOT_COLORS = { 1: "#3b82f6", 2: "#a855f7", 3: "#f97316" };
+            const dateIndex = {};
+            dates.forEach((d, i) => { dateIndex[d] = i; });
+
+            // 슬롯별 매수/매도 마커 데이터셋 생성 (6개: 슬롯3 × BUY/SELL)
+            const markerDatasets = [];
+            const events = (cachedTradeEvents && cachedTradeEvents[selectedStrat]) || [];
+            [1, 2, 3].forEach(slot => {
+                const slotColor = SLOT_COLORS[slot] || "#ffffff";
+                ["BUY", "SELL"].forEach(type => {
+                    // labels 인덱스가 일치하는 null체워진 배열 생성
+                    const dataArr = chartData.map((_, i) => {
+                        const ev = events.find(e => e.slot_no === slot && e.trade_type === type && dateIndex[e.date] === i);
+                        return ev ? (assetHistory[i] || 0) : null;
+                    });
+                    const ptEvents = events.filter(e => e.slot_no === slot && e.trade_type === type);
+
+                    if (ptEvents.length > 0) {
+                        markerDatasets.push({
+                            label: `슬롯${slot} ${type === "BUY" ? "매수▲" : "매도▽"}`,
+                            data: dataArr,
+                            yAxisID: "yAsset",
+                            borderColor: slotColor,
+                            backgroundColor: slotColor,
+                            pointStyle: "triangle",
+                            rotation: type === "BUY" ? 0 : 180,
+                            pointRadius: dataArr.map(v => v !== null ? 8 : 0),
+                            pointHoverRadius: 10,
+                            showLine: false,
+                            spanGaps: false,
+                            _ptEvents: ptEvents,
+                            _slot: slot,
+                            _type: type
+                        });
+                    }
+                });
+            });
+
+
+            // afterDraw 커스텀 플러그인: 슬롯 번호 텍스트 캔버스 위에 직접 렌더링
+            const slotLabelPlugin = {
+                id: "slotLabelPlugin",
+                afterDraw(chart) {
+                    const ctx2 = chart.ctx;
+                    chart.data.datasets.forEach((ds, dsIdx) => {
+                        if (!ds._ptEvents) return;
+                        const meta = chart.getDatasetMeta(dsIdx);
+                        ds._ptEvents.forEach(ev => {
+                            const idx = dateIndex[ev.date];
+                            if (idx === undefined) return;
+                            const pt = meta.data[idx];
+                            if (!pt || pt.x === undefined) return;
+                            const px = pt.x;
+                            const py = pt.y;
+                            const offset = ds._type === "BUY" ? -16 : 16;
+                            ctx2.save();
+                            ctx2.font = "bold 10px sans-serif";
+                            ctx2.fillStyle = SLOT_COLORS[ds._slot] || "#fff";
+                            ctx2.textAlign = "center";
+                            ctx2.fillText(ds._slot, px, py + offset);
+                            ctx2.restore();
+                        });
+                    });
+                }
+            };
+
+            if (backtestAssetChartInstance) {
+                backtestAssetChartInstance.destroy();
+            }
+
+            const ctx = canvas.getContext("2d");
+            backtestAssetChartInstance = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: `${selectedStrat} 백테스트 평가자산 (원)`,
+                            data: assetHistory,
+                            borderColor: "#34d399", // 민트 에메랄드 자산선
+                            borderWidth: 2.2,
+                            pointRadius: 0,
+                            yAxisID: "yAsset",
+                            order: 1,
+                        },
+                        {
+                            label: "KOSPI 20일 이동평균선 (pt)",
+                            data: kospiMa20,
+                            borderColor: "#ef4444", // 🔴 빨간색 실선!
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: "yKospi",
+                            order: 2,
+                        },
+                        {
+                            label: "KOSPI 지수 (pt)",
+                            data: kospiCloses,
+                            borderColor: "#e2e8f0", // ⚪ 회색/흰색 점선!
+                            borderWidth: 1.5,
+                            borderDash: [3, 3], // 점선 표현!
+                            pointRadius: 0,
+                            yAxisID: "yKospi",
+                            order: 3,
+                        },
+                    ].concat(markerDatasets),
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: "index", intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: "top",
+                            labels: {
+                                color: "#cbd5e1",
+                                font: { size: 12 },
+                                usePointStyle: true,
+                            },
+                        },
+                        tooltip: {
+                            enabled: false,
+                            external: function(context) {
+                                const overlay = document.getElementById("chartHoverOverlay");
+                                if (!overlay) return;
+                                const tooltipModel = context.tooltip;
+                                if (tooltipModel.opacity === 0) {
+                                    overlay.style.display = "none";
+                                    return;
+                                }
+
+                                if (tooltipModel.body) {
+                                    const title = tooltipModel.title[0] || '';
+                                    let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:2px;">📅 ${title}</div>`;
+                                    tooltipModel.dataPoints.forEach(pt => {
+                                        if (pt.dataset._ptEvents || (pt.dataset.label && pt.dataset.label.startsWith("슬롯"))) return;
+                                        const label = pt.dataset.label;
+                                        const val = pt.raw;
+                                        const color = pt.dataset.borderColor;
+                                        const formattedVal = pt.dataset.yAxisID === "yAsset" 
+                                            ? (val ? val.toLocaleString() + ' 원' : '-')
+                                            : (val ? val.toLocaleString() + ' pt' : '-');
+                                        html += `<div style="color:${color}; font-weight:600; line-height:1.4;">${label}: ${formattedVal}</div>`;
+                                    });
+                                    overlay.innerHTML = html;
+                                    overlay.style.display = "block";
+                                }
+                            }
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                mode: 'x'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: "#94a3b8", maxTicksLimit: 8, maxRotation: 0 },
+                            grid: { color: "rgba(255, 255, 255, 0.05)" },
+                        },
+                        yAsset: {
+                            type: "linear",
+                            position: "left",
+                            ticks: {
+                                color: "#34d399",
+                                callback: (v) => (v >= 10000 ? `${(v / 10000).toLocaleString()}만원` : `${v}원`),
+                            },
+                            grid: { color: "rgba(255, 255, 255, 0.05)" },
+                        },
+                        yKospi: {
+                            type: "linear",
+                            position: "right",
+                            ticks: {
+                                color: "#ef4444",
+                                callback: (v) => `${v.toLocaleString()} pt`,
+                            },
+                            grid: { drawOnChartArea: false },
+                        },
+                    },
+                },
+            }, [slotLabelPlugin]);
+        }
+    </script>
 </body>
 </html>

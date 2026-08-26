@@ -1,0 +1,36 @@
+<!-- 공통 사이드바 (서버 사이드 include). 최초 HTML 응답에 포함되어 렌더링되므로
+     기존 load_sidebar.js 방식(JS로 사후 주입)에서 발생하던 '빈 사이드바 → 채워짐' 깜박임이 없다.
+     활성 메뉴 강조도 Flask의 request.path를 기준으로 렌더링 시점에 서버에서 결정한다. -->
+{% set nav_items = [
+    ('/', '🏠 메인 대시보드'),
+    ('/backtest', '🚀 시뮬레이션'),
+    ('/recommendation', '🎯 모의투자'),
+    ('/proposal', '💡 투자제안'),
+    ('/proposal-mobile', '💡 투자제안(모)'),
+] %}
+<aside class="sidebar" id="sidebarNav">
+    <div class="sidebar-logo">
+        <span style="font-size: 1.4rem;">📈</span>
+        <span style="font-weight: 700; font-size: 1.1rem; background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">AlgoFinder</span>
+    </div>
+    <nav class="sidebar-menu" style="margin-top: 24px; display: flex; flex-direction: column; gap: 8px;">
+        {% for path, label in nav_items %}
+        {% set is_active = (request.path == path) or (path != '/' and request.path.startswith(path)) %}
+        <a href="{{ path }}" class="sidebar-item{{ ' active' if is_active else '' }}" style="
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            color: {{ '#ffffff' if is_active else '#94a3b8' }};
+            background: {{ 'linear-gradient(135deg, #0284c7, #0369a1)' if is_active else 'transparent' }};
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: {{ '600' if is_active else '400' }};
+            transition: all 0.2s ease;
+        ">
+            {{ label }}
+        </a>
+        {% endfor %}
+    </nav>
+</aside>
