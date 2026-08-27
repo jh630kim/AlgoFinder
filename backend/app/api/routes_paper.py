@@ -131,33 +131,52 @@ def backtest_run():
         session.close()
 
 
+def _ymd(raw: str) -> str:
+    """'YYYY-MM-DD' 또는 'YYYYMMDD' 문자열을 'YYYYMMDD'로 정규화합니다(빈 값이면 오늘)."""
+    s = (raw or "").strip().replace("-", "")
+    return s if len(s) == 8 and s.isdigit() else datetime.now().strftime("%Y%m%d")
+
+
 @paper_api_bp.route("/recommended-stocks", methods=["GET"])
 def recommended_stocks():
-    """전략별 매수 포착 추천 종목 반환 API."""
-    target_date = request.args.get("date", "").strip()
-    sample_recommendations = [
-        {
-            "code": "011200",
-            "name": "HMM",
-            "market": "KOSPI",
-            "win_rate": 78.8,
-            "target_price": 21700.0,
-            "strategy_name": "🟠 S3 볼린저 밴드 전략",
-            "reason": "💡 볼린저 밴드 수축(Squeeze) 후 상한선 강한 폭발 돌파 포착",
-            "target_profit_loss": "1:2.5",
-        },
-        {
-            "code": "005930",
-            "name": "삼성전자",
-            "market": "KOSPI",
-            "win_rate": 82.4,
-            "target_price": 78500.0,
-            "strategy_name": "🟡 S1c 20일선 적용형",
-            "reason": "💡 기관/외국인 동시 쌍끌이 순매수 유입 및 눌림목 반등 포착",
-            "target_profit_loss": "1:3.0",
-        }
-    ]
-    return jsonify({"status": "success", "date": target_date or datetime.now().strftime("%Y-%m-%d"), "data": sample_recommendations})
+    """기준일 종가(D-0) 기준 S1~S5(8전략) 전략별 TOP 3 매수 추천 종목 반환 API."""
+    target_date = _ymd(request.args.get("target_date") or request.args.get("date"))
+    session = next(db_manager.get_session())
+    try:
+        from backend.app.services.proposal_advisor import ProposalAdvisor
+        result = ProposalAdvisor(session).get_recommendations(target_date)
+        return jsonify({"status": "success", **result})
+    finally:
+        session.close()
+
+
+@paper_api_bp.route("/paper-trading/stock-info", methods=["GET"])
+def stock_info():
+    """종목코드로 종목명·시장·기준일 종가를 조회합니다(수동 매수 모달 자동 채움용)."""
+    code = request.args.get("code", "").strip()
+    target_date = _ymd(request.args.get("target_date"))
+    if not code:
+        return jsonify({"status": "error", "message": "종목코드를 입력해 주세요."}), 400
+
+    session = next(db_manager.get_session())
+    try:
+        from backend.app.models.investor_trading_daily import InvestorTradingDaily
+        master = session.query(AllStockMaster).filter(AllStockMaster.code == code).first()
+        row = (
+            session.query(InvestorTradingDaily.date, InvestorTradingDaily.close_price)
+            .filter(InvestorTradingDaily.symbol == code, InvestorTradingDaily.date <= target_date)
+            .order_by(InvestorTradingDaily.date.desc()).first()
+        )
+        return jsonify({
+            "status": "success",
+            "code": code,
+            "name": master.name if master else code,
+            "market": master.market if master else "",
+            "close_price": int(round(row[1])) if row else 0,
+            "close_date": row[0] if row else None,
+        })
+    finally:
+        session.close()
 
 
 @paper_api_bp.route("/backtest-leaderboard", methods=["GET"])
@@ -183,21 +202,50 @@ def backtest_leaderboard():
         session.close()
 
 
+MAX_SLOTS = 5  # 투자제안/모의투자 포트폴리오 최대 보유 종목 수
+
+
 @paper_api_bp.route("/paper-trading/portfolio", methods=["GET"])
 def get_portfolio():
-    """지정된 계좌 유형(rec/prop)의 독립 자산 상태 및 보유 종목 리스트 반환 API."""
+    """계좌 유형(rec/prop)의 자산 상태와 보유 종목을 반환합니다.
+
+    target_date(YYYY-MM-DD 또는 YYYYMMDD)가 오면 해당 기준일 종가로 보유 종목을 평가하고
+    매도 신호(전략 매도 / -5% 손절 / +10% 익절)를 함께 산출합니다.
+    """
     account_type = request.args.get("account_type", "rec").strip()
+    target_date_raw = request.args.get("target_date", "").strip()
     session = next(db_manager.get_session())
     try:
         repo = PaperTradingRepository(session)
         pf = repo.get_or_create_portfolio(account_type=account_type)
-        pos_list = repo.get_positions(account_type=account_type)
+        pos_dicts = [p.to_dict() for p in repo.get_positions(account_type=account_type)]
+
+        positions, sell_signals, eval_date = pos_dicts, [], None
+        stock_value = sum(p["buy_price"] * p["quantity"] for p in pos_dicts)
+        if target_date_raw:
+            from backend.app.services.proposal_advisor import ProposalAdvisor
+            view = ProposalAdvisor(session).build_portfolio_view(pos_dicts, _ymd(target_date_raw))
+            positions, sell_signals = view["positions"], view["sell_signals"]
+            stock_value, eval_date = view["stock_value"], view["eval_date"]
+
+        total_asset = pf.cash_balance + stock_value
         return jsonify({
             "status": "success",
             "account_type": account_type,
+            "eval_date": eval_date,
             "portfolio": pf.to_dict(),
-            "positions": [p.to_dict() for p in pos_list],
-            "sell_signals": []
+            "summary": {
+                "initial_balance": int(pf.initial_balance),
+                "cash_balance": int(pf.cash_balance),
+                "stock_value": int(round(stock_value)),
+                "total_asset": int(round(total_asset)),
+                "profit_pct": round((total_asset - pf.initial_balance) / pf.initial_balance * 100.0, 2)
+                if pf.initial_balance else 0.0,
+                "holding_count": len(pos_dicts),
+                "max_slots": MAX_SLOTS,
+            },
+            "positions": positions,
+            "sell_signals": sell_signals,
         })
     finally:
         session.close()
@@ -240,8 +288,13 @@ def manual_buy():
     try:
         repo = PaperTradingRepository(session)
         pf = repo.get_or_create_portfolio(account_type=account_type)
+        positions = repo.get_positions(account_type=account_type)
         total_cost = price * qty
 
+        if len(positions) >= MAX_SLOTS:
+            return jsonify({"status": "error", "message": f"보유 종목이 최대 {MAX_SLOTS}개로 가득 차 매수할 수 없습니다."}), 400
+        if any(p.stock_code == code for p in positions):
+            return jsonify({"status": "error", "message": "이미 보유 중인 종목입니다. (추가 매수/물타기 미지원)"}), 400
         if pf.cash_balance < total_cost:
             return jsonify({"status": "error", "message": f"잔여 현금({pf.cash_balance:,.0f}원)이 부족합니다."}), 400
 
@@ -249,6 +302,7 @@ def manual_buy():
         stock_name = master.name if master else code
 
         pf.cash_balance -= total_cost
+        repo.add_position(account_type, code, stock_name, buy_date, price, qty)
         repo.add_trade_history(account_type, buy_date, "MANUAL_BUY", code, stock_name, price, qty)
         session.commit()
 
@@ -256,6 +310,50 @@ def manual_buy():
             "status": "success",
             "message": f"[{account_type.upper()}] 계좌에 {stock_name}({code}) {qty}주 매수가 완료되었습니다.",
             "portfolio": pf.to_dict()
+        })
+    finally:
+        session.close()
+
+
+@paper_api_bp.route("/paper-trading/sell", methods=["POST"])
+def sell_position():
+    """지정된 계좌 유형(rec/prop)의 보유 종목 수동 매도(부분 매도 포함) 실행 API."""
+    req_data = request.get_json(silent=True) or {}
+    account_type = req_data.get("account_type", "rec").strip()
+    code = req_data.get("stock_code", "").strip()
+    price = float(req_data.get("sell_price", 0))
+    qty = int(req_data.get("quantity", 0))
+    sell_date = req_data.get("sell_date", datetime.now().strftime("%Y-%m-%d"))
+
+    if not code or price <= 0 or qty <= 0:
+        return jsonify({"status": "error", "message": "올바른 종목코드, 매도 단가, 수량을 입력해 주세요."}), 400
+
+    session = next(db_manager.get_session())
+    try:
+        repo = PaperTradingRepository(session)
+        pf = repo.get_or_create_portfolio(account_type=account_type)
+        position = repo.get_position(account_type, code)
+
+        if not position:
+            return jsonify({"status": "error", "message": "보유하지 않은 종목입니다."}), 400
+        if qty > position.quantity:
+            return jsonify({"status": "error", "message": f"보유 수량({position.quantity}주)을 초과해 매도할 수 없습니다."}), 400
+
+        proceeds = price * qty
+        realized_pnl = (price - position.buy_price) * qty
+        stock_name = position.stock_name
+
+        pf.cash_balance += proceeds
+        repo.reduce_position(position, qty)
+        repo.add_trade_history(account_type, sell_date, "SELL", code, stock_name, price, qty, realized_pnl)
+        session.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": f"[{account_type.upper()}] {stock_name}({code}) {qty}주 매도 완료 "
+                       f"(실현손익 {realized_pnl:+,.0f}원).",
+            "portfolio": pf.to_dict(),
+            "realized_pnl": int(round(realized_pnl)),
         })
     finally:
         session.close()

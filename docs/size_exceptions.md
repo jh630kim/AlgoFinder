@@ -7,13 +7,16 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
   업종/종목 필터링 등)만 전담하는 단일 책임 안에서, 조회 메서드 개수 자체가 많아 줄 수가 늘어남.
 - 메서드별로 별도 파일로 쪼개면 서로 연관된 대시보드 쿼리가 여러 파일에 흩어져 오히려 탐색성이 떨어짐.
 
-## backend/app/api/routes_paper.py (261줄)
-- 모의투자/투자제안 계좌유형(`account_type`)별 자산 관리 API 8개(backtest, portfolio, reset,
-  manual-buy 등)가 하나의 Blueprint(`paper_api_bp`)에 묶여 있어 엔드포인트 수만큼 길어짐.
+## backend/app/api/routes_paper.py (359줄)
+- 모의투자/투자제안 계좌유형(`account_type`)별 자산 관리 API(backtest, portfolio, reset,
+  manual-buy, sell, stock-info, recommended-stocks 등)가 하나의 Blueprint(`paper_api_bp`)에
+  묶여 있어 엔드포인트 수만큼 길어짐.
 - 각 라우트 함수 자체는 요청/응답 바인딩 위주로 짧으며, 복잡한 로직은 이미 레포지토리/서비스로 위임됨.
 - (2026-08-27) `backtest_run`에 결과 3개 테이블 `clear_all()` 초기화·단일 전략 8종 제한·렌더 payload
-  파일 캐시 기록 로직 추가. 리더보드 조립 로직은 `BacktestLeaderboardBuilder` 서비스로 이관되어
-  약 380줄 → 261줄로 감소(엔드포인트 수 때문에 여전히 200줄 초과).
+  파일 캐시 기록 로직 추가. 리더보드 조립 로직은 `BacktestLeaderboardBuilder` 서비스로 이관.
+- (2026-08-27) 투자제안 창 배선: recommended-stocks 실연산 교체, portfolio 기준일 평가·매도신호,
+  manual-buy 슬롯/중복 가드 + 포지션 생성, sell/stock-info 엔드포인트 신설(신호·평가 연산은
+  `ProposalAdvisor` 서비스로 위임). 약 261 → 359줄.
 
 ## backend/app/services/backtest_engine.py (413줄)
 - `BacktestEngine._simulate_trading` 메서드가 슬롯 관리·매수/매도 조건·보유 종목 갱신이 서로

@@ -49,6 +49,38 @@ class PaperTradingRepository:
         """지정된 계좌 유형의 현재 보유 중인 종목 잔고 리스트를 조회합니다."""
         return self.session.query(PaperPosition).filter(PaperPosition.account_type == account_type).all()
 
+    def get_position(self, account_type: str, stock_code: str) -> PaperPosition:
+        """지정된 계좌 유형에서 특정 종목의 보유 잔고를 조회합니다(없으면 None)."""
+        return self.session.query(PaperPosition).filter(
+            PaperPosition.account_type == account_type,
+            PaperPosition.stock_code == stock_code
+        ).first()
+
+    def add_position(
+        self, account_type: str, stock_code: str, stock_name: str,
+        buy_date: str, buy_price: float, quantity: int
+    ) -> PaperPosition:
+        """지정된 계좌 유형에 신규 보유 잔고를 생성합니다."""
+        position = PaperPosition(
+            account_type=account_type, stock_code=stock_code, stock_name=stock_name,
+            buy_date=buy_date, buy_price=float(buy_price), quantity=int(quantity),
+            total_amount=float(buy_price) * int(quantity)
+        )
+        self.session.add(position)
+        self.session.commit()
+        self.session.refresh(position)
+        return position
+
+    def reduce_position(self, position: PaperPosition, sell_qty: int) -> None:
+        """보유 잔고에서 매도 수량만큼 차감하고, 전량 매도 시 잔고를 삭제합니다."""
+        remaining = position.quantity - int(sell_qty)
+        if remaining <= 0:
+            self.session.delete(position)
+        else:
+            position.quantity = remaining
+            position.total_amount = position.buy_price * remaining
+        self.session.commit()
+
     def add_trade_history(
         self,
         account_type: str,

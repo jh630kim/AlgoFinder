@@ -328,3 +328,57 @@ body {
 .sidebar-btn:hover {
     filter: brightness(1.15);
 }
+
+/* ===== 투자제안 팝업 모달 (매수 / 매도 / 차트 공용) ===== */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    z-index: 2000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-box {
+    background: #0f172a;
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 520px;
+    padding: 24px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    position: relative;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-box.modal-box-wide { max-width: 900px; }
+.modal-box.modal-box-sell { border-color: rgba(239, 68, 68, 0.55); }
+
+.btn-buy-action, .btn-sell-action, .btn-chart-view {
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-weight: 800;
+    font-size: 12px;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-buy-action { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; }
+.btn-sell-action { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; }
+.btn-chart-view {
+    background: rgba(56, 189, 248, 0.15); color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700;
+}
+.btn-buy-action:hover, .btn-sell-action:hover { transform: scale(1.05); }
+.btn-chart-view:hover { background: rgba(56, 189, 248, 0.3); color: #fff; }
