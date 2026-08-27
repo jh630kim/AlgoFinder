@@ -69,3 +69,12 @@ class StrategyDailyEquityRepository:
         deleted_count = self.session.query(StrategyDailyEquity).filter_by(combo_id=combo_id).delete()
         self.session.commit()
         return deleted_count
+
+    def clear_all(self) -> int:
+        """전체 일별 평가자산 데이터를 삭제합니다.
+
+        :return: 삭제된 데이터 건수
+        """
+        deleted_count = self.session.query(StrategyDailyEquity).delete()
+        self.session.commit()
+        return deleted_count

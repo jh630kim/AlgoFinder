@@ -65,11 +65,29 @@ class BacktestEngine:
         self.daily_equity_repo = StrategyDailyEquityRepository(session)
         self._df_cache = None
         self._cached_sectors = None
+        self._indicator_cache = {}   # strat_key -> 지표 연산 완료 DataFrame
+        self._dict_map_cache = {}    # strat_key -> {(symbol, date): row_dict}
 
-    def load_market_dataframe(self, target_sectors: List[str]) -> pd.DataFrame:
-        """지정된 투자 대상 군의 시계열 데이터를 캐싱하여 고속 로딩합니다."""
+    def load_market_dataframe(
+        self, target_sectors: List[str], start_date: str = None, end_date: str = None
+    ) -> pd.DataFrame:
+        """지정된 투자 대상 군의 시계열 데이터를 기간 제한 + 캐싱하여 고속 로딩합니다.
+
+        :param target_sectors: 투자 대상 업종 군 리스트
+        :param start_date: 시뮬레이션 시작일(YYYYMMDD). 지표 워밍업용 200일 버퍼를 앞에 두고 조회
+        :param end_date: 시뮬레이션 종료일(YYYYMMDD)
+        :return: 심볼·일자 정렬된 시계열 데이터프레임
+        """
         sectors_key = str(sorted(target_sectors)) if target_sectors else "ALL"
-        if self._df_cache is not None and self._cached_sectors == sectors_key:
+
+        # 지표 워밍업 버퍼(200달력일 ≈ 135거래일 > 최장 지표창 sma60)를 시작일 앞에 확보
+        warmup_start = None
+        if start_date:
+            warmup_start = (
+                datetime.strptime(start_date, "%Y%m%d") - timedelta(days=200)
+            ).strftime("%Y%m%d")
+        cache_key = f"{sectors_key}|{warmup_start}|{end_date}"
+        if self._df_cache is not None and self._cached_sectors == cache_key:
             return self._df_cache
 
         from backend.app.models.target_stocks import TargetStocks
@@ -86,14 +104,44 @@ class BacktestEngine:
 
         if target_sectors and "ALL" not in [t.upper() for t in target_sectors]:
             query = query.filter(AllStockMaster.sector.in_(target_sectors))
+        if warmup_start:
+            query = query.filter(InvestorTradingDaily.date >= warmup_start)
+        if end_date:
+            query = query.filter(InvestorTradingDaily.date <= end_date)
 
         df = pd.read_sql(query.statement, self.session.bind)
         if df.empty:
             return pd.DataFrame()
         df = df.sort_values(by=["symbol", "date"]).reset_index(drop=True)
+
+        # 로딩 데이터 범위가 바뀌면 전략별 지표/딕셔너리 캐시를 무효화
         self._df_cache = df
-        self._cached_sectors = sectors_key
+        self._cached_sectors = cache_key
+        self._indicator_cache = {}
+        self._dict_map_cache = {}
         return df
+
+    def _get_processed_df(self, strat_key: str, df_raw: pd.DataFrame) -> pd.DataFrame:
+        """전략별 지표 연산 결과를 캐싱해 combo 간 중복 계산을 제거합니다.
+
+        :param strat_key: 전략 키(S1 ~ S5 등)
+        :param df_raw: 원천 시계열 데이터프레임
+        :return: 지표·시그널이 반영된 데이터프레임
+        """
+        if strat_key not in self._indicator_cache:
+            self._indicator_cache[strat_key] = STRATEGY_MAP[strat_key].calculate_indicators(df_raw)
+        return self._indicator_cache[strat_key]
+
+    def _get_dict_map(self, strat_key: str, processed_df: pd.DataFrame) -> Dict[Any, Any]:
+        """전략별 (symbol, date) 고속 룩업 딕셔너리를 캐싱합니다.
+
+        :param strat_key: 전략 키
+        :param processed_df: 지표가 반영된 데이터프레임
+        :return: {(symbol, date): row_dict} 형태의 룩업 맵
+        """
+        if strat_key not in self._dict_map_cache:
+            self._dict_map_cache[strat_key] = processed_df.set_index(["symbol", "date"]).to_dict("index")
+        return self._dict_map_cache[strat_key]
 
     def run_backtest_for_combo(
         self, combo_id: int, initial_capital: float = 3000000.0, max_slots: int = 3,
@@ -107,19 +155,20 @@ class BacktestEngine:
         if not target_sectors:
             target_sectors = ["KOSPI 200", "KOSDAQ 150"]
 
-        df_raw = self.load_market_dataframe(target_sectors)
-        if df_raw.empty:
-            return self._empty_result(combo_id, combo_name, initial_capital)
-
+        # 기간 기본값을 먼저 확정한 뒤 해당 구간(+워밍업 버퍼)만 DB에서 로딩
         today_dt = datetime.now()
         if not end_date:
             end_date = today_dt.strftime("%Y%m%d")
         if not start_date:
             start_date = (today_dt - timedelta(days=365)).strftime("%Y%m%d")
 
-        processed_dfs = [STRATEGY_MAP[k].calculate_indicators(df_raw) for k in strat_keys]
+        df_raw = self.load_market_dataframe(target_sectors, start_date, end_date)
+        if df_raw.empty:
+            return self._empty_result(combo_id, combo_name, initial_capital)
+
+        processed_dfs = [self._get_processed_df(k, df_raw) for k in strat_keys]
         metrics, logs, equity_logs = self._simulate_trading(
-            combo_id, processed_dfs, initial_capital, max_slots, start_date, end_date
+            combo_id, processed_dfs, strat_keys, initial_capital, max_slots, start_date, end_date
         )
 
         self.leaderboard_repo.upsert_leaderboard_entry({
@@ -136,9 +185,32 @@ class BacktestEngine:
 
         return {"combo_id": combo_id, "combo_name": combo_name, "metrics": metrics, "log_count": len(logs)}
 
+    def _portfolio_equity(
+        self, cash: float, positions: Dict[str, Any], price_map: Dict[Any, Any],
+        d: str, exclude: set = None
+    ) -> float:
+        """현금 + 전 보유종목을 당일(d) 종가로 평가한 총자산을 산출합니다.
+
+        :param cash: 현재 현금 잔고
+        :param positions: 보유 포지션 딕셔너리 (symbol -> {shares, buy_price, ...})
+        :param price_map: (symbol, date) -> row_dict 룩업 맵 (기준 전략)
+        :param d: 평가 기준 일자(YYYYMMDD)
+        :param exclude: 평가에서 제외할 심볼 집합(당일 이미 매도 확정분 등)
+        :return: 당일 종가 기준 평가 총자산
+        """
+        skip = exclude or set()
+        total = cash
+        for sym, pos in positions.items():
+            if sym in skip:
+                continue
+            row = price_map.get((sym, d))
+            price = float(row["close_price"]) if row else pos["buy_price"]
+            total += pos["shares"] * price
+        return total
+
     def _simulate_trading(
-        self, combo_id: int, dfs: List[pd.DataFrame], initial_capital: float,
-        max_slots: int, start_date: str, end_date: str
+        self, combo_id: int, dfs: List[pd.DataFrame], strat_keys: List[str],
+        initial_capital: float, max_slots: int, start_date: str, end_date: str
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
         """D-1 신호 포착 ➔ D-0 종가 체결 시뮬레이션을 딕셔너리 고속 룩업으로 연산합니다."""
         dates = sorted(dfs[0]["date"].unique())
@@ -146,11 +218,8 @@ class BacktestEngine:
         if not sim_dates:
             return self._empty_metrics(initial_capital), [], []
 
-        # 고속 룩업용 딕셔너리 빌드: (symbol, date) -> dict_row
-        dict_maps = []
-        for df in dfs:
-            d_map = df.set_index(["symbol", "date"]).to_dict("index")
-            dict_maps.append(d_map)
+        # 고속 룩업용 딕셔너리: 전략별 캐시 재사용으로 combo 간 중복 빌드 제거
+        dict_maps = [self._get_dict_map(k, df) for k, df in zip(strat_keys, dfs)]
 
         all_symbols = sorted(dfs[0]["symbol"].unique())
         cash = initial_capital
@@ -193,7 +262,10 @@ class BacktestEngine:
                         cash += revenue
                         closed_trades.append(profit_pct)
 
-                        curr_equity = cash + sum(p["shares"] * sell_price for p in positions.values() if p != pos)
+                        # 체결 직후 자산: 현금 + 남은 보유종목을 당일 종가로 평가 (매도 확정분 제외)
+                        curr_equity = self._portfolio_equity(
+                            cash, positions, dict_maps[0], d, exclude=set(symbols_to_sell) | {sym}
+                        )
                         cum_ret = (curr_equity - initial_capital) / initial_capital * 100.0
 
                         # 슬롯 번호 조회 후 반환
@@ -261,7 +333,8 @@ class BacktestEngine:
                                     "prob_up": b_item["prob_up"], "name": b_item["name"],
                                     "holding_days": 0, "slot_no": new_slot
                                 }
-                                curr_eq_after = cash + cost + sum(p["shares"] * p["buy_price"] for s, p in positions.items() if s != b_item["symbol"])
+                                # 체결 직후 자산: 현금 + 전 보유종목(신규 포함)을 당일 종가로 평가
+                                curr_eq_after = self._portfolio_equity(cash, positions, dict_maps[0], d)
                                 cum_ret_b = (curr_eq_after - initial_capital) / initial_capital * 100.0
                                 logs.append({
                                     "combo_id": combo_id, "trade_date": d, "symbol": b_item["symbol"],

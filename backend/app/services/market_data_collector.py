@@ -250,7 +250,8 @@ class MarketDataCollector:
         return sorted_records
 
     def collect_target_market_data(
-        self, start_date: str = None, end_date: str = None, incremental: bool = True
+        self, start_date: str = None, end_date: str = None, incremental: bool = True,
+        progress_callback=None
     ) -> Dict[str, Any]:
         """
         모든 타깃 종목에 대해 수급/OHLCV 데이터를 스마트 증분(Incremental) 또는 전체(Full) 모드로 수집합니다.
@@ -258,6 +259,7 @@ class MarketDataCollector:
         :param start_date: 시작일자 (YYYYMMDD, None시 기본값 20050101)
         :param end_date: 종료일자 (YYYYMMDD, None시 오늘)
         :param incremental: 증분 수집 여부 (True: 미수집 신규 일자만, False: 전체 덮어쓰기)
+        :param progress_callback: 진행 상황 콜백 (done:int, total:int, msg:str) — None시 미호출
         :return: 수집 결과 요약 딕셔너리
         """
         start_time = time.time()
@@ -277,6 +279,10 @@ class MarketDataCollector:
             stock_obj = self.master_repo.get_by_code(sym)
             stock_name = stock_obj.name if stock_obj else sym
             pct = (idx / total_symbols) * 100 if total_symbols > 0 else 100
+
+            # 진행 상황 콜백 (웹 진행바 등 외부 표시용)
+            if progress_callback:
+                progress_callback(idx, total_symbols, f"{sym} {stock_name}")
 
             target_start = default_start
 

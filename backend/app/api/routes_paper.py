@@ -4,8 +4,11 @@
 계좌유형별 독립 자산 관리(reset, buy, sell, manual-buy) 및 백테스트 리더보드 API를 담당합니다.
 """
 
+import os
+import json
+import tempfile
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from backend.app.core.database import db_manager
 from backend.app.repositories.paper_trading_repository import PaperTradingRepository
@@ -17,9 +20,35 @@ paper_api_bp = Blueprint("paper_api", __name__, url_prefix="/api")
 BACKTEST_PROGRESS = {
     "status": "idle",
     "completed": 0,
-    "total": 21,
+    "total": 8,
     "message": ""
 }
+
+# 렌더 payload(리더보드/차트/매매일지) 파일 캐시: backtest_run 완료 시 1회 기록, 조회 시 재사용
+RENDER_CACHE_FILE = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "backtest_render_cache.json")
+)
+
+
+def _read_render_cache():
+    """렌더 payload 캐시 파일을 읽어 dict로 반환합니다. 없거나 손상 시 None."""
+    try:
+        with open(RENDER_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _write_render_cache(payload):
+    """렌더 payload를 임시 파일에 쓴 뒤 원자적으로 교체 저장합니다(읽기 경합 방지)."""
+    try:
+        os.makedirs(os.path.dirname(RENDER_CACHE_FILE), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(RENDER_CACHE_FILE), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, RENDER_CACHE_FILE)
+    except OSError as e:
+        logger.error(f"렌더 캐시 저장 실패: {e}")
 
 @paper_api_bp.route("/backtest-progress", methods=["GET"])
 def backtest_progress():
@@ -45,6 +74,9 @@ def backtest_run():
     try:
         from backend.app.services.backtest_engine import BacktestEngine
         from backend.app.models.market_indices_daily import MarketIndicesDaily
+        from backend.app.repositories.strategy_leaderboard_repository import StrategyLeaderboardRepository
+        from backend.app.repositories.strategy_trade_logs_repository import StrategyTradeLogsRepository
+        from backend.app.repositories.strategy_daily_equity_repository import StrategyDailyEquityRepository
 
         records = session.query(MarketIndicesDaily.date).order_by(MarketIndicesDaily.date.asc()).all()
         dates = [r.date.replace("-", "") for r in records if r.date]
@@ -62,12 +94,17 @@ def backtest_run():
             start_date = target_dates[0]
             end_date = target_dates[-1]
 
+        # 백테스트 결과 3개 테이블 전체 초기화 후 단일 전략 8종(combo_id 1~8)만 재연산
+        StrategyLeaderboardRepository(session).clear_all()
+        StrategyTradeLogsRepository(session).clear_all()
+        StrategyDailyEquityRepository(session).clear_all()
+
         engine = BacktestEngine(session)
-        for c_id in range(1, 22):
+        for c_id in range(1, 9):
             try:
                 engine.run_backtest_for_combo(
-                    combo_id=c_id, 
-                    initial_capital=10000000.0, 
+                    combo_id=c_id,
+                    initial_capital=10000000.0,
                     max_slots=3,
                     start_date=start_date,
                     end_date=end_date,
@@ -76,8 +113,13 @@ def backtest_run():
             except Exception as e:
                 logger.error(f"Combo {c_id} 오류: {e}")
             BACKTEST_PROGRESS["completed"] = c_id
-            BACKTEST_PROGRESS["message"] = f"전략 조합 {c_id}/21 연산 완료..."
-            
+            BACKTEST_PROGRESS["message"] = f"전략 조합 {c_id}/8 연산 완료..."
+
+        # 렌더 payload를 1회 조립해 파일 캐시에 저장 (이후 조회는 재조립 없이 반환)
+        from backend.app.services.backtest_leaderboard_builder import BacktestLeaderboardBuilder
+        payload = BacktestLeaderboardBuilder(session).build(period, custom_start, custom_end, True)
+        _write_render_cache(payload)
+
         BACKTEST_PROGRESS["status"] = "completed"
         BACKTEST_PROGRESS["message"] = "백테스트 완료"
         return jsonify({"status": "success", "message": "백테스트가 성공적으로 완료되었습니다."})
@@ -120,176 +162,23 @@ def recommended_stocks():
 
 @paper_api_bp.route("/backtest-leaderboard", methods=["GET"])
 def backtest_leaderboard():
-    """시뮬레이션 내림차순 리더보드, 백테스트 차트 및 매매일지 API (DB 및 기간 연산)."""
+    """시뮬레이션 리더보드/차트/매매일지 API. 파라미터 없는 기본 조회는 파일 캐시를 재사용합니다."""
+    has_period = bool(request.args.get("period"))
     period = request.args.get("period", "3y").strip()
     custom_start = request.args.get("start_date", "").strip()
     custom_end = request.args.get("end_date", "").strip()
-    
+
+    # 기본 경로(파라미터 없음): backtest_run이 남긴 파일 캐시를 재조립 없이 반환
+    if not has_period:
+        cached = _read_render_cache()
+        if cached is not None:
+            return jsonify(cached)
+
     session = next(db_manager.get_session())
     try:
-        from backend.app.models.market_indices_daily import MarketIndicesDaily
-        from backend.app.repositories.strategy_leaderboard_repository import StrategyLeaderboardRepository
-        from backend.app.repositories.strategy_trade_logs_repository import StrategyTradeLogsRepository
-        from backend.app.repositories.strategy_daily_equity_repository import StrategyDailyEquityRepository
-
-        # 0. DB에 저장된 실제 기간 추론 (최초 접속 시 화면 동기화용)
-        # 파라미터가 없으면 DB에 저장된 연산 일수를 기반으로 period를 강제 적용합니다.
-        from backend.app.models.strategy_leaderboard import StrategyLeaderboard
-        db_entries_count = session.query(StrategyLeaderboard).count()
-        if db_entries_count > 0 and not request.args.get("period"):
-            from backend.app.models.strategy_daily_equity import StrategyDailyEquity
-            db_period_days = session.query(StrategyDailyEquity.trade_date).distinct().count()
-            if db_period_days > 0:
-                if db_period_days <= 150: period = "6m"
-                elif db_period_days <= 300: period = "1y"
-                elif db_period_days <= 800: period = "3y"
-                elif db_period_days <= 1500: period = "5y"
-                else: period = "all"
-        
-        # 1. KOSPI 지수 및 20일 이동평균 수식 100% 백엔드 연산
-        records = session.query(MarketIndicesDaily).order_by(MarketIndicesDaily.date.asc()).all()
-        kospi_chart_data = []
-        if records:
-            valid_recs = [r for r in records if r.kospi_close is not None]
-            closes = [r.kospi_close for r in valid_recs]
-            dates = [r.date for r in valid_recs]
-            ma20_list = [None] * len(closes)
-            for i in range(19, len(closes)):
-                window = closes[i-19:i+1]
-                ma20_list[i] = round(sum(window) / 20.0, 2)
-            
-            # 시뮬레이션 기간 매핑 (6m: 125일, 1y: 250일, 3y: 750일, 5y: 1250일, all: 5000일, custom: 날짜 범위)
-            if period == "custom" and custom_start and custom_end:
-                # 커스텀 날짜 인덱싱
-                start_fmt = custom_start.replace("-", "")
-                end_fmt = custom_end.replace("-", "")
-                filtered_indices = [i for i, d in enumerate(dates) if start_fmt <= d <= end_fmt]
-                if filtered_indices:
-                    target_closes = [closes[i] for i in filtered_indices]
-                    target_dates = [dates[i] for i in filtered_indices]
-                    target_ma20 = [ma20_list[i] for i in filtered_indices]
-                else:
-                    target_closes, target_dates, target_ma20 = closes[-750:], dates[-750:], ma20_list[-750:]
-            else:
-                period_limits = {"6m": 125, "1y": 250, "3y": 750, "5y": 1250, "all": 5000}
-                limit = period_limits.get(period, 750)
-                target_closes = closes[-limit:]
-                target_dates = dates[-limit:]
-                target_ma20 = ma20_list[-limit:]
-
-            for i in range(len(target_closes)):
-                d_str = target_dates[i]
-                if len(d_str) == 8:
-                    d_str = f"{d_str[:4]}-{d_str[4:6]}-{d_str[6:]}"
-                kospi_chart_data.append({
-                    "date": d_str,
-                    "kospi_close": target_closes[i],
-                    "kospi_ma20": target_ma20[i]
-                })
-
-        # 2. DB 초고속 조회 (Fast Query) 전환 (HTTP 타임아웃 100% 방지)
-        leaderboard_repo = StrategyLeaderboardRepository(session)
-        db_entries = leaderboard_repo.get_all_ordered_by_return()
-
-        # 만약 DB 리더보드가 없으면 강제 실행하지 않고 빈 상태를 유지 (프론트에서 수동 실행 필요)
-        if not db_entries:
-            db_entries = []
-        full_combos = []
-        for idx, entry in enumerate(db_entries):
-            full_combos.append({
-                "rank": idx + 1,
-                "combo_id": entry.combo_id,
-                "strategy": entry.combo_name.split(" ")[0] if " " in entry.combo_name else entry.combo_name,
-                "name": entry.combo_name,
-                "eval_amount": int(entry.final_capital),
-                "return_rate": round(entry.total_return_pct, 2),
-                "win_rate": round(entry.win_rate_pct, 2),
-                "mdd": round(entry.mdd_pct, 2),
-                "trade_count": entry.total_trades
-            })
-
-        # DB 매매 일지 (strategy_trade_logs) 전체 전략별 쿼리
-        from backend.app.models.strategy_trade_logs import StrategyTradeLogs
-        all_db_logs = session.query(StrategyTradeLogs).order_by(StrategyTradeLogs.trade_date.asc()).all()
-        combo_to_strat = {combo["combo_id"]: combo["strategy"] for combo in full_combos}
-        
-        trade_logs_map = {}
-        # 차트 매수/매도 마커 이벤트 (전략별 → 날짜별 이벤트 리스트)
-        chart_trade_events = {}
-
-        for log in all_db_logs:
-            stk_key = combo_to_strat.get(log.combo_id)
-            if not stk_key:
-                continue
-            if stk_key not in trade_logs_map:
-                trade_logs_map[stk_key] = []
-            if stk_key not in chart_trade_events:
-                chart_trade_events[stk_key] = []
-            
-            d_str = log.trade_date
-            if len(d_str) == 8:
-                d_str = f"{d_str[:4]}-{d_str[4:6]}-{d_str[6:]}"
-            
-            trade_logs_map[stk_key].append({
-                "date": d_str,
-                "name": log.name,
-                "code": log.symbol,
-                "type": f"{'매수' if log.trade_type == 'BUY' else '매도'}{log.strategy_tag}",
-                "days": f"{log.holding_days}일",
-                "quantity": log.shares,
-                "price": int(log.unit_price),
-                "total": int(log.total_amount),
-                "cum_asset": f"{int(log.equity_after_trade):,}원 ({'+' if log.cum_return_pct >= 0 else ''}{log.cum_return_pct}%)",
-                "equity_raw": int(log.equity_after_trade),
-                "slot_no": log.slot_no or 0,
-                "pnl": f"{'+' if log.profit_krw > 0 else ''}{int(log.profit_krw):,}원 ({'+' if log.profit_pct >= 0 else ''}{log.profit_pct}%)" if log.trade_type == "SELL" else "-"
-            })
-
-            # 차트 마커용 이벤트 등록 (날짜, 매수/매도, 슬롯 번호, 종목명)
-            chart_trade_events[stk_key].append({
-                "date": d_str,
-                "trade_type": log.trade_type,
-                "slot_no": log.slot_no or 0,
-                "name": log.name,
-                "symbol": log.symbol
-            })
-
-
-        # DB에서 일별 누적자산(StrategyDailyEquity) 쿼리
-        equity_repo = StrategyDailyEquityRepository(session)
-        combo_equity_maps = {}
-        for combo in full_combos:
-            combo_id = combo["combo_id"]
-            eq_records = equity_repo.get_equity_by_combo(combo_id)
-            combo_equity_maps[combo_id] = {r.trade_date: r.equity_amount for r in eq_records}
-
-        # 4. 차트 일별 자산 시계열 (100% DB/엔진 연산 기반)
-        n_days = len(kospi_chart_data)
-        combo_last_equity = {combo["combo_id"]: 10000000.0 for combo in full_combos}
-        
-        for i in range(n_days):
-            date_str = kospi_chart_data[i]["date"]
-            db_date = date_str.replace("-", "")
-            asset_map = {}
-            for combo in full_combos:
-                stk_key = combo["strategy"]
-                combo_id = combo["combo_id"]
-                eq_map = combo_equity_maps[combo_id]
-                
-                if db_date in eq_map:
-                    combo_last_equity[combo_id] = eq_map[db_date]
-                
-                asset_map[stk_key] = round(combo_last_equity[combo_id], 0)
-            kospi_chart_data[i]["strategy_assets"] = asset_map
-
-        return jsonify({
-            "status": "success",
-            "period": period,
-            "leaderboard": full_combos,
-            "trade_logs": trade_logs_map,
-            "chart_trade_events": chart_trade_events,
-            "chart_data": kospi_chart_data
-        })
+        from backend.app.services.backtest_leaderboard_builder import BacktestLeaderboardBuilder
+        payload = BacktestLeaderboardBuilder(session).build(period, custom_start, custom_end, has_period)
+        return jsonify(payload)
     finally:
         session.close()
 

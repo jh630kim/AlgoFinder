@@ -77,3 +77,12 @@ class StrategyLeaderboardRepository:
         return self.session.query(StrategyLeaderboard).order_by(
             StrategyLeaderboard.total_return_pct.desc()
         ).all()
+
+    def clear_all(self) -> int:
+        """전체 전략 리더보드 데이터를 삭제합니다.
+
+        :return: 삭제된 행 수
+        """
+        deleted_count = self.session.query(StrategyLeaderboard).delete()
+        self.session.commit()
+        return deleted_count

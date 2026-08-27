@@ -33,6 +33,9 @@ ENV/
 data/*.db
 data/app.db
 
+# 백테스트 렌더 payload 파일 캐시 (backtest_run 시 재생성)
+data/backtest_render_cache.json
+
 # IDE & Editor
 .vscode/
 .idea/

@@ -82,3 +82,12 @@ class StrategyTradeLogsRepository:
         deleted_count = self.session.query(StrategyTradeLogs).filter_by(combo_id=combo_id).delete()
         self.session.commit()
         return deleted_count
+
+    def clear_all(self) -> int:
+        """전체 매매 체결 로그를 삭제합니다.
+
+        :return: 삭제된 로그 건수
+        """
+        deleted_count = self.session.query(StrategyTradeLogs).delete()
+        self.session.commit()
+        return deleted_count

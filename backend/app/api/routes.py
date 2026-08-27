@@ -4,18 +4,67 @@ Flask RESTful API 라우트 모듈 (routes.py).
 대시보드 차트, 수급 TOP 20, 증분 수집, 구분/업종 연쇄 필터링 파이프라인 API 엔드포인트를 제공합니다.
 """
 
+import threading
+
 from flask import Blueprint, request, jsonify
 from backend.app.core.database import db_manager
 from backend.app.repositories.web_repository import WebRepository
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
+# 수급 동기화 진행 상태 (모듈 전역, 단일 워커 기준). 프론트가 /api/sync-progress로 폴링.
 sync_status = {
-    "is_running": False,
-    "progress": 0.0,
-    "last_sync": "-",
+    "status": "idle",     # idle | running | completed | error
+    "current": 0,
+    "total": 0,
     "message": "대기 중"
 }
+
+
+def _run_sync_job() -> None:
+    """백그라운드 스레드에서 타깃 종목 수급/OHLCV 증분 수집을 실행하고 sync_status를 갱신합니다."""
+    from backend.app.services.market_data_collector import MarketDataCollector
+
+    session = next(db_manager.get_session())
+    try:
+        def _cb(done: int, total: int, msg: str) -> None:
+            sync_status["current"] = done
+            sync_status["total"] = total
+            sync_status["message"] = f"[{done}/{total}] {msg}"
+
+        result = MarketDataCollector(session).collect_target_market_data(
+            incremental=True, progress_callback=_cb
+        )
+        sync_status["status"] = "completed"
+        sync_status["message"] = (
+            f"동기화 완료 (적재 {result.get('total_records_saved', 0)}건, "
+            f"건너뜀 {result.get('skipped_symbols_count', 0)}종목)"
+        )
+    except Exception as exc:
+        sync_status["status"] = "error"
+        sync_status["message"] = f"동기화 실패: {exc}"
+    finally:
+        session.close()
+
+
+@api_bp.route("/sync", methods=["POST"])
+def start_sync():
+    """수급/OHLCV 증분 동기화를 백그라운드 스레드로 시작합니다."""
+    if sync_status["status"] == "running":
+        return jsonify({"status": "error", "message": "이미 동기화가 진행 중입니다."})
+
+    sync_status["status"] = "running"
+    sync_status["current"] = 0
+    sync_status["total"] = 0
+    sync_status["message"] = "동기화 준비 중..."
+    threading.Thread(target=_run_sync_job, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@api_bp.route("/sync-progress", methods=["GET"])
+def sync_progress():
+    """수급 동기화 진행 상태를 반환합니다."""
+    return jsonify(sync_status)
 
 
 @api_bp.route("/search-stock", methods=["GET"])

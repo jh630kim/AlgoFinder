@@ -49,8 +49,8 @@ function initTimeframeControlEvents() {
     }
 }
 
-/** 대시보드 상단 칩 정보 4종 로드 (Null 가드 안전 처리) */
-function initDashboardHeaderStats() {
+/** 대시보드 상단 칩 정보 4종 갱신 (Null 가드 안전 처리) */
+function loadHeaderStats() {
     fetch("/api/market-indices")
         .then((res) => res.json())
         .then((res) => {
@@ -68,13 +68,81 @@ function initDashboardHeaderStats() {
             }
         })
         .catch((err) => console.error("Header stats fetch error:", err));
+}
+
+/** 대시보드 상단 칩 로드 및 수급 동기화 버튼 바인딩 */
+function initDashboardHeaderStats() {
+    loadHeaderStats();
 
     const btnSync = document.getElementById("btnManualSync");
     if (btnSync) {
-        btnSync.addEventListener("click", () => {
-            alert("🔄 수급 데이터 동기화 요청이 백그라운드로 전달되었습니다.");
-        });
+        btnSync.addEventListener("click", () => runManualSync(btnSync));
     }
+}
+
+/** 수급 동기화 실행 + 진행바 폴링 (시뮬레이션 진행바와 동일 패턴) */
+function runManualSync(btnSync) {
+    const wrap = document.getElementById("syncProgressWrap");
+    const bar = document.getElementById("syncProgressBar");
+    const text = document.getElementById("syncProgressText");
+    const origLabel = btnSync.innerHTML;
+    let pollTimer = null;
+
+    const restore = (hideDelay) => {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+        btnSync.disabled = false;
+        btnSync.style.opacity = "1";
+        btnSync.innerHTML = origLabel;
+        setTimeout(() => { if (wrap) wrap.style.display = "none"; }, hideDelay);
+    };
+
+    btnSync.disabled = true;
+    btnSync.style.opacity = "0.6";
+    btnSync.innerHTML = "⏳ 동기화 중...";
+    if (wrap) wrap.style.display = "block";
+    if (bar) bar.style.width = "5%";
+    if (text) text.innerText = "동기화 준비 중...";
+
+    const startPolling = () => {
+        pollTimer = setInterval(() => {
+            fetch("/api/sync-progress")
+                .then((r) => r.json())
+                .then((d) => {
+                    if (text) text.innerText = d.message || "동기화 중...";
+                    if (bar) {
+                        let pct = d.total > 0 ? (d.current / d.total) * 100 : 5;
+                        if (pct < 5) pct = 5;
+                        bar.style.width = pct + "%";
+                    }
+                    if (d.status === "completed") {
+                        if (bar) bar.style.width = "100%";
+                        restore(2000);
+                        loadHeaderStats();
+                    } else if (d.status === "error") {
+                        restore(3000);
+                        alert(d.message || "동기화 중 오류가 발생했습니다.");
+                    }
+                })
+                .catch((err) => console.error("Sync progress poll error:", err));
+        }, 1000);
+    };
+
+    fetch("/api/sync", { method: "POST" })
+        .then((r) => r.json())
+        .then((res) => {
+            if (res.status === "started") {
+                startPolling();
+            } else {
+                restore(0);
+                alert(res.message || "동기화를 시작할 수 없습니다.");
+            }
+        })
+        .catch((err) => {
+            restore(0);
+            console.error("Sync start error:", err);
+            alert("동기화 요청 중 오류가 발생했습니다.");
+        });
 }
 
 /** 4단계 연쇄 제어 컨트롤러 초기화 */

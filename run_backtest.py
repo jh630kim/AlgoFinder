@@ -81,7 +81,8 @@ def main() -> None:
         engine = BacktestEngine(session)
 
         if args.combo.lower() == "all":
-            combo_ids = list(STRATEGY_COMBOS.keys())
+            # 복합 전략(9~21) 제외, 단일 전략 8종(S1 ~ S5)만 실행
+            combo_ids = [k for k in STRATEGY_COMBOS.keys() if k <= 8]
         else:
             combo_ids = [int(c.strip()) for c in args.combo.split(",") if c.strip()]
 
