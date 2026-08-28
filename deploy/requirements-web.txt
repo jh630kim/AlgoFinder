@@ -1,0 +1,15 @@
+# 웹(Koyeb) 서빙 전용 경량 의존성 — 투자제안 모바일 화면 + 추천 연산에 필요한 최소.
+# 제외: fastapi/uvicorn, pykrx, finance-datareader, psycopg2, aiohttp (수집·비사용 경로)
+
+flask>=3.0.0
+gunicorn>=21.2.0
+sqlalchemy>=2.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# 가상매매 저장소로 Turso(libSQL)를 쓸 때만 필요(PAPER_DATABASE_URL 이 libsql://... 인 경우).
+# sqlalchemy-libsql>=0.1.0

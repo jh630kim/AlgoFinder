@@ -1,0 +1,11 @@
+{
+  "name": "AlgoFinder 투자제안",
+  "short_name": "투자제안",
+  "description": "퀀트 전략별 매수/매도 추천 (모바일)",
+  "start_url": "/proposal-mobile",
+  "scope": "/proposal-mobile",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a"
+}

@@ -1,0 +1,72 @@
+name: roll-lite-db
+
+# 경량 DB를 매일 갱신 → GitHub Release 자산 교체 → Koyeb 재배포 훅 호출 → Discord 알림.
+# 최초 1회는 로컬에서 `python deploy/build_lite_db.py` 실행 후 Release( tag: lite-db )에
+# app_lite.db 를 업로드해 두어야 한다.
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"      # 평일 09:30 UTC (KST 18:30)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write                # Release 자산 갱신용
+
+jobs:
+  roll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Download current lite DB from Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data
+          gh release download lite-db --pattern app_lite.db --dir data --clobber \
+            || echo "기존 Release 자산 없음 — build 로 생성"
+
+      - name: Build lite DB if missing
+        run: |
+          if [ ! -f data/app_lite.db ]; then
+            echo "전체 app.db 가 없으면 이 단계는 실패한다(최초 1회는 로컬 build 후 수동 업로드 필요)."
+            python deploy/build_lite_db.py
+          fi
+
+      - name: Roll (incremental collect + prune)
+        env:
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+        # NOTE: CI에서 수집 소스(KRX 로그인) 안정화 전까지는 --skip-collect 로 프루닝/VACUUM만.
+        #       수집이 확인되면 --skip-collect 를 제거한다.
+        run: python deploy/roll_lite_db.py --skip-collect
+
+      - name: Upload lite DB to Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view lite-db >/dev/null 2>&1 || gh release create lite-db --notes "rolling lite db"
+          gh release upload lite-db data/app_lite.db --clobber
+
+      - name: Trigger Koyeb redeploy
+        env:
+          HOOK: ${{ secrets.KOYEB_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$HOOK" ]; then curl -fsSL -X POST "$HOOK"; else echo "KOYEB_DEPLOY_HOOK_URL 미설정 — 건너뜀"; fi
+
+      - name: Discord notify
+        if: always()
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$WEBHOOK" ]; then
+            curl -fsSL -H "Content-Type: application/json" -X POST \
+              -d "{\"content\":\"roll-lite-db: ${{ job.status }} ($(date -u +%FT%TZ))\"}" "$WEBHOOK"
+          fi

@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+env
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+data/app.db
+data/app.db.gz
+data/backtest_render_cache.json
+.env
+docs
+backend/tests
+*.md
+!README.md
