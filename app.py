@@ -121,8 +121,15 @@ def backtest():
 
 @app.route("/recommendation")
 def recommendation():
-    """모의투자 분석실 페이지 라우트."""
-    return render_template("recommendation.html")
+    """모의투자 분석실 페이지 라우트.
+
+    투자제안 화면과 동일하게 기준일 기본값·최근 수집일·코스피 20일선 국면을 SSR로 주입합니다.
+    """
+    return render_template(
+        "recommendation.html",
+        latest_trading_date=_latest_trading_date(),
+        kospi_regime=_kospi_regime_ssr(),
+    )
 
 
 @app.route("/proposal")

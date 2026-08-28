@@ -137,15 +137,62 @@ def _ymd(raw: str) -> str:
     return s if len(s) == 8 and s.isdigit() else datetime.now().strftime("%Y%m%d")
 
 
+def _dash(ymd: str) -> str:
+    """'YYYYMMDD'를 'YYYY-MM-DD'로 변환합니다(형식이 아니면 원본 반환)."""
+    return f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}" if ymd and len(ymd) == 8 and ymd.isdigit() else ymd
+
+
+def _close_on_or_before(session, code: str, ymd: str):
+    """종목의 기준일(YYYYMMDD) 이하 최근 거래일 종가와 그 거래일을 반환합니다.
+
+    :return: (종가float, 거래일'YYYYMMDD'). 데이터가 없으면 (None, None).
+    """
+    from backend.app.models.investor_trading_daily import InvestorTradingDaily
+    row = (
+        session.query(InvestorTradingDaily.date, InvestorTradingDaily.close_price)
+        .filter(InvestorTradingDaily.symbol == code, InvestorTradingDaily.date <= ymd)
+        .order_by(InvestorTradingDaily.date.desc()).first()
+    )
+    return (float(row[1]), row[0]) if row else (None, None)
+
+
 @paper_api_bp.route("/recommended-stocks", methods=["GET"])
 def recommended_stocks():
-    """기준일 종가(D-0) 기준 S1~S5(8전략) 전략별 TOP 3 매수 추천 종목 반환 API."""
+    """S1~S5(8전략) 전략별 TOP 3 매수 추천 종목 반환 API.
+
+    mode=advice(기본, 투자제안): 신호 판단일=기준일(D-0).
+    mode=sim(모의투자): 신호 판단일=기준일 직전 거래일(D-1), 추천가는 기준일(D-0) 종가.
+    """
     target_date = _ymd(request.args.get("target_date") or request.args.get("date"))
+    mode = "sim" if request.args.get("mode") == "sim" else "advice"
     session = next(db_manager.get_session())
     try:
         from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
-        result = ProposalAdvisorCache.get(session, target_date).get_recommendations(target_date)
+        result = ProposalAdvisorCache.get(session, target_date, mode).get_recommendations(target_date)
         return jsonify({"status": "success", **result})
+    finally:
+        session.close()
+
+
+@paper_api_bp.route("/paper-trading/next-trading-date", methods=["GET"])
+def next_trading_date():
+    """거래일 달력에서 입력일보다 큰 첫 거래일을 'YYYY-MM-DD'로 반환합니다.
+
+    모의투자 '다음날 조회'용. 주말·공휴일은 달력에 없으므로 자연히 건너뜁니다.
+    추천/평가 연산이 쓰는 수급 일별 데이터(investor_trading_daily)의 거래일을 그대로 사용해,
+    엔진의 기준일 스냅(직전 거래일로 되돌림)과 어긋나지 않게 합니다.
+    다음 거래일이 없으면(마지막 거래일) next_date=None을 반환합니다.
+    """
+    base = _ymd(request.args.get("date") or request.args.get("target_date"))
+    session = next(db_manager.get_session())
+    try:
+        from backend.app.models.investor_trading_daily import InvestorTradingDaily
+        row = (
+            session.query(InvestorTradingDaily.date)
+            .filter(InvestorTradingDaily.date > base)
+            .order_by(InvestorTradingDaily.date.asc()).first()
+        )
+        return jsonify({"status": "success", "next_date": _dash(row[0]) if row else None})
     finally:
         session.close()
 
@@ -214,20 +261,22 @@ def get_portfolio():
     """
     account_type = request.args.get("account_type", "rec").strip()
     target_date_raw = request.args.get("target_date", "").strip()
+    mode = "sim" if request.args.get("mode") == "sim" else "advice"
     session = next(db_manager.get_session())
     try:
         repo = PaperTradingRepository(session)
         pf = repo.get_or_create_portfolio(account_type=account_type)
         pos_dicts = [p.to_dict() for p in repo.get_positions(account_type=account_type)]
 
-        positions, sell_signals, eval_date = pos_dicts, [], None
+        positions, sell_signals, eval_date, signal_date = pos_dicts, [], None, None
         stock_value = sum(p["buy_price"] * p["quantity"] for p in pos_dicts)
         if target_date_raw:
             from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
             td = _ymd(target_date_raw)
-            view = ProposalAdvisorCache.get(session, td).build_portfolio_view(pos_dicts, td)
+            view = ProposalAdvisorCache.get(session, td, mode).build_portfolio_view(pos_dicts, td)
             positions, sell_signals = view["positions"], view["sell_signals"]
             stock_value, eval_date = view["stock_value"], view["eval_date"]
+            signal_date = view["signal_date"]
 
         total_asset = pf.cash_balance + stock_value
 
@@ -239,6 +288,7 @@ def get_portfolio():
             "status": "success",
             "account_type": account_type,
             "eval_date": eval_date,
+            "signal_date": signal_date,
             "kospi_regime": kospi_regime,
             "portfolio": pf.to_dict(),
             "summary": {
@@ -280,22 +330,48 @@ def reset_portfolio():
 
 @paper_api_bp.route("/paper-trading/manual-buy", methods=["POST"])
 def manual_buy():
-    """지정된 계좌 유형(rec/prop)의 수동 매수 실행 API."""
+    """지정된 계좌 유형(rec/prop)의 수동 매수 실행 API.
+
+    rec 계좌: 단가 미입력 시 기준일(buy_date) 이하 최근 거래일 종가를 기본 체결가로 쓰고,
+    수량 미입력 시 (현재 총자산 ÷ 최대 슬롯 ÷ 단가)를 잔여 현금 한도 내에서 내림 산정합니다.
+    사용자가 값을 보내면 그 값을 그대로 존중합니다.
+    """
     req_data = request.get_json(silent=True) or {}
     account_type = req_data.get("account_type", "rec").strip()
     code = req_data.get("stock_code", "").strip()
-    price = float(req_data.get("buy_price", 0))
-    qty = int(req_data.get("quantity", 0))
+    price = float(req_data.get("buy_price", 0) or 0)
+    qty = int(req_data.get("quantity", 0) or 0)
     buy_date = req_data.get("buy_date", datetime.now().strftime("%Y-%m-%d"))
 
-    if not code or price <= 0 or qty <= 0:
-        return jsonify({"status": "error", "message": "올바른 종목코드, 단가, 수량을 입력해 주세요."}), 400
+    if not code:
+        return jsonify({"status": "error", "message": "종목코드를 입력해 주세요."}), 400
 
     session = next(db_manager.get_session())
     try:
         repo = PaperTradingRepository(session)
         pf = repo.get_or_create_portfolio(account_type=account_type)
         positions = repo.get_positions(account_type=account_type)
+
+        # rec 계좌: 단가·수량 기본값을 기준일 종가 기반으로 자동 산정
+        if account_type == "rec":
+            eff_close, eff_date = _close_on_or_before(session, code, _ymd(buy_date))
+            if price <= 0:
+                if not eff_close:
+                    return jsonify({"status": "error", "message": "기준일 종가를 찾을 수 없어 매수할 수 없습니다(거래정지/데이터 없음)."}), 400
+                price = eff_close
+            if eff_date:
+                buy_date = _dash(eff_date)
+            if qty <= 0 and price > 0:
+                held_val = sum(
+                    p.quantity * (_close_on_or_before(session, p.stock_code, _ymd(buy_date))[0] or p.buy_price)
+                    for p in positions
+                )
+                slot_budget = (pf.cash_balance + held_val) / MAX_SLOTS
+                qty = int(min(slot_budget, pf.cash_balance) // price)
+
+        if price <= 0 or qty <= 0:
+            return jsonify({"status": "error", "message": "올바른 단가와 수량을 입력해 주세요."}), 400
+
         total_cost = price * qty
 
         if len(positions) >= MAX_SLOTS:
@@ -324,16 +400,19 @@ def manual_buy():
 
 @paper_api_bp.route("/paper-trading/sell", methods=["POST"])
 def sell_position():
-    """지정된 계좌 유형(rec/prop)의 보유 종목 수동 매도(부분 매도 포함) 실행 API."""
+    """지정된 계좌 유형(rec/prop)의 보유 종목 수동 매도(부분 매도 포함) 실행 API.
+
+    rec 계좌: 매도 단가 미입력 시 기준일(sell_date) 이하 최근 거래일 종가를 기본가로 씁니다.
+    """
     req_data = request.get_json(silent=True) or {}
     account_type = req_data.get("account_type", "rec").strip()
     code = req_data.get("stock_code", "").strip()
-    price = float(req_data.get("sell_price", 0))
-    qty = int(req_data.get("quantity", 0))
+    price = float(req_data.get("sell_price", 0) or 0)
+    qty = int(req_data.get("quantity", 0) or 0)
     sell_date = req_data.get("sell_date", datetime.now().strftime("%Y-%m-%d"))
 
-    if not code or price <= 0 or qty <= 0:
-        return jsonify({"status": "error", "message": "올바른 종목코드, 매도 단가, 수량을 입력해 주세요."}), 400
+    if not code or qty <= 0:
+        return jsonify({"status": "error", "message": "올바른 종목코드와 수량을 입력해 주세요."}), 400
 
     session = next(db_manager.get_session())
     try:
@@ -345,6 +424,18 @@ def sell_position():
             return jsonify({"status": "error", "message": "보유하지 않은 종목입니다."}), 400
         if qty > position.quantity:
             return jsonify({"status": "error", "message": f"보유 수량({position.quantity}주)을 초과해 매도할 수 없습니다."}), 400
+
+        # rec 계좌: 단가 미입력 시 기준일 종가를 기본 매도가로 사용
+        if account_type == "rec" and price <= 0:
+            eff_close, eff_date = _close_on_or_before(session, code, _ymd(sell_date))
+            if not eff_close:
+                return jsonify({"status": "error", "message": "기준일 종가를 찾을 수 없어 매도할 수 없습니다(거래정지/데이터 없음)."}), 400
+            price = eff_close
+            if eff_date:
+                sell_date = _dash(eff_date)
+
+        if price <= 0:
+            return jsonify({"status": "error", "message": "올바른 매도 단가를 입력해 주세요."}), 400
 
         proceeds = price * qty
         realized_pnl = (price - position.buy_price) * qty

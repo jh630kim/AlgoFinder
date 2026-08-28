@@ -69,22 +69,24 @@ class BacktestEngine:
         self._dict_map_cache = {}    # strat_key -> {(symbol, date): row_dict}
 
     def load_market_dataframe(
-        self, target_sectors: List[str], start_date: str = None, end_date: str = None
+        self, target_sectors: List[str], start_date: str = None, end_date: str = None,
+        warmup_days: int = 200
     ) -> pd.DataFrame:
         """지정된 투자 대상 군의 시계열 데이터를 기간 제한 + 캐싱하여 고속 로딩합니다.
 
         :param target_sectors: 투자 대상 업종 군 리스트
-        :param start_date: 시뮬레이션 시작일(YYYYMMDD). 지표 워밍업용 200일 버퍼를 앞에 두고 조회
+        :param start_date: 시뮬레이션 시작일(YYYYMMDD). 지표 워밍업용 버퍼를 앞에 두고 조회
         :param end_date: 시뮬레이션 종료일(YYYYMMDD)
+        :param warmup_days: start_date 앞에 확보할 워밍업 버퍼(달력일). 0이면 버퍼 없이 start_date부터.
         :return: 심볼·일자 정렬된 시계열 데이터프레임
         """
         sectors_key = str(sorted(target_sectors)) if target_sectors else "ALL"
 
-        # 지표 워밍업 버퍼(200달력일 ≈ 135거래일 > 최장 지표창 sma60)를 시작일 앞에 확보
+        # 지표 워밍업 버퍼(기본 200달력일 ≈ 135거래일 > 최장 지표창 sma60)를 시작일 앞에 확보
         warmup_start = None
         if start_date:
             warmup_start = (
-                datetime.strptime(start_date, "%Y%m%d") - timedelta(days=200)
+                datetime.strptime(start_date, "%Y%m%d") - timedelta(days=warmup_days)
             ).strftime("%Y%m%d")
         cache_key = f"{sectors_key}|{warmup_start}|{end_date}"
         if self._df_cache is not None and self._cached_sectors == cache_key:

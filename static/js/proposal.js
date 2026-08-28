@@ -1,32 +1,62 @@
 /**
- * 투자제안(proposal) 화면 컨트롤러 (proposal.js) — PC / 모바일 공용.
+ * 투자제안(proposal) / 모의투자(recommendation) 공용 화면 컨트롤러 (proposal.js).
  *
- * 계좌유형 'prop' 고정. 기준일 종가 기준 S1~S5(8전략) 매수 추천 조회, 실제 체결 내역
- * 수동 기록(매수/매도 모달), 보유 종목 매도 시그널(전략 매도 / -5% 손절 / +10% 익절) 표시.
- * 모든 연산은 백엔드가 수행하며 이 파일은 렌더링과 입력 중계만 담당한다.
+ * 계좌유형은 window.PROPOSAL_ACCOUNT 로 주입('prop'=투자제안 기본, 'rec'=모의투자).
+ * - 투자제안(advice): 신호 판단일 = 기준일(D-0).
+ * - 모의투자(sim): 신호 판단일 = 기준일 직전 거래일(D-1), 매매 초기값은 기준일(D-0) 종가.
+ *   추가로 '다음날 조회'(btnNextDayRec)로 지수 거래일 달력 기준 다음 거래일로 이동한다.
+ * S1~S5(8전략) 매수 추천 조회, 실제 체결 내역 수동 기록(매수/매도 모달), 보유 종목 매도
+ * 시그널(전략 매도 / -5% 손절 / +10% 익절) 표시. 모든 연산은 백엔드가 수행하며 이 파일은
+ * 렌더링과 입력 중계만 담당한다.
  */
 
 (function () {
     "use strict";
 
-    const ACCOUNT = "prop";
+    const ACCOUNT = window.PROPOSAL_ACCOUNT || "prop";
+    // 모의투자 계좌는 D-1 신호 모드, 투자제안은 기존 D-0 모드
+    const MODE = ACCOUNT === "rec" ? "sim" : "advice";
     const IS_MOBILE = !!window.PROPOSAL_MOBILE;
     let sellTargetCode = null;
     let sellMaxQty = 0;
     let proposalChart = null;
+    let lastSummary = null;
 
     const $ = (id) => document.getElementById(id);
     const won = (n) => (Math.round(Number(n) || 0)).toLocaleString() + " 원";
     const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
     const pnlColor = (v) => (v > 0 ? "#f87171" : v < 0 ? "#38bdf8" : "#94a3b8");
 
+    // 모의투자 전용: 마지막으로 조회한 기준일을 브라우저에 기억
+    const REC_DATE_KEY = "algofinder_rec_target_date";
+
+    function loadRememberedDate() {
+        try {
+            const v = localStorage.getItem(REC_DATE_KEY) || "";
+            return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
+        } catch (e) {
+            return "";
+        }
+    }
+
+    function rememberTargetDate(v) {
+        if (ACCOUNT !== "rec" || !/^\d{4}-\d{2}-\d{2}$/.test(v || "")) return;
+        try { localStorage.setItem(REC_DATE_KEY, v); } catch (e) { /* 사생활 보호 모드 등 */ }
+    }
+
     document.addEventListener("DOMContentLoaded", init);
 
     function init() {
         const dp = $("recTargetDate");
+        // 모의투자는 SSR 기본값보다 '마지막 사용 기준일'을 우선 복원
+        if (dp && ACCOUNT === "rec") {
+            const saved = loadRememberedDate();
+            if (saved) dp.value = saved;
+        }
         if (dp && !dp.value) dp.value = new Date().toISOString().slice(0, 10);
 
         bindClick("btnFetchRec", refresh);
+        bindClick("btnNextDayRec", nextDay);
         bindClick("btnResetPortfolio", resetPortfolio);
         bindClick("btnOpenManualBuyModal", () => openBuyModal());
         bindClick("btnCloseModal", closeBuyModal);
@@ -95,6 +125,30 @@
         if (note) note.style.display = (shown && shown !== selectedDate) ? "" : "none";
     }
 
+    // 신호 판단 기준일(D-1) 표시. 모의투자 화면에만 해당 요소가 존재한다
+    function renderSignalDate(sig) {
+        const el = $("signalDateValue");
+        if (el) el.textContent = fmtYmd(sig) || "-";
+    }
+
+    // 모의투자: 지수 거래일 달력에서 다음 거래일로 기준일을 이동한 뒤 재조회
+    async function nextDay() {
+        const note = $("nextDayNote");
+        try {
+            const r = await fetch(`/api/paper-trading/next-trading-date?date=${targetDate()}`).then((x) => x.json());
+            if (r.status === "success" && r.next_date) {
+                const dp = $("recTargetDate");
+                if (dp) dp.value = r.next_date;
+                if (note) note.style.display = "none";
+                refresh();
+            } else if (note) {
+                note.style.display = "";
+            }
+        } catch (e) {
+            console.error("nextDay error:", e);
+        }
+    }
+
     // 코스피 20일선 국면(up/down/flat)에 따라 배지 글자색·테두리색을 지정
     function applyRegimeColor(el, regime) {
         const map = {
@@ -119,11 +173,12 @@
     // ── 데이터 로드 ─────────────────────────────────────────────
     async function refresh() {
         const td = targetDate();
+        rememberTargetDate(td);
         showLoading();
         try {
             const [pf, rec] = await Promise.all([
-                fetch(`/api/paper-trading/portfolio?account_type=${ACCOUNT}&target_date=${td}`).then((r) => r.json()),
-                fetch(`/api/recommended-stocks?target_date=${td}`).then((r) => r.json()),
+                fetch(`/api/paper-trading/portfolio?account_type=${ACCOUNT}&target_date=${td}&mode=${MODE}`).then((r) => r.json()),
+                fetch(`/api/recommended-stocks?target_date=${td}&mode=${MODE}`).then((r) => r.json()),
             ]);
             if (pf.status === "success") {
                 renderSummary(pf.summary);
@@ -133,6 +188,7 @@
             if (pf.status === "success") renderKospiRegime(pf.kospi_regime);
             if (rec.status === "success") renderRecommendations(rec.data || []);
             renderEvalDate(rec.eval_date || pf.eval_date, td);
+            renderSignalDate(rec.signal_date || pf.signal_date);
         } catch (e) {
             console.error("proposal refresh error:", e);
         } finally {
@@ -152,6 +208,7 @@
     // ── 렌더링 ─────────────────────────────────────────────────
     function renderSummary(s) {
         if (!s) return;
+        lastSummary = s;
         setText("pfInitial", won(s.initial_balance));
         setText("pfCash", won(s.cash_balance));
         setText("pfStockValue", won(s.stock_value));
@@ -291,14 +348,34 @@
     function openBuyModal(prefill) {
         const m = $("manualBuyModal");
         if (!m) return;
+        const price = prefill ? Number(prefill.price) || 0 : 0;
         $("inputStockCode").value = prefill ? prefill.code : "";
         $("inputBuyPrice").value = prefill ? prefill.price : "";
-        $("inputBuyQty").value = "";
+        // 모의투자: 20% 분할 기준 수량을 자동으로 채움(편집 가능)
+        $("inputBuyQty").value = (ACCOUNT === "rec" && price > 0) ? autoBuyQty(price) : "";
         $("inputBuyDate").value = targetDate();
         setText("buyStockNameHint", prefill ? prefill.name : "종목 코드를 입력해 주세요");
+        ["inputBuyPrice", "inputBuyQty"].forEach((id) => {
+            const el = $(id);
+            if (el) el.oninput = updateBuyTotal;
+        });
+        updateBuyTotal();
         m.classList.add("active");
     }
     function closeBuyModal() { const m = $("manualBuyModal"); if (m) m.classList.remove("active"); }
+
+    // 20% 분할 매수: (총자산 ÷ 최대 슬롯)과 잔여 현금 중 작은 값 ÷ 단가, 내림
+    function autoBuyQty(price) {
+        if (!lastSummary || price <= 0) return "";
+        const perSlot = (lastSummary.total_asset || 0) / (lastSummary.max_slots || 5);
+        const budget = Math.min(perSlot, lastSummary.cash_balance || 0);
+        return Math.max(0, Math.floor(budget / price)) || "";
+    }
+
+    function updateBuyTotal() {
+        const total = (Number($("inputBuyPrice").value) || 0) * (parseInt($("inputBuyQty").value, 10) || 0);
+        setText("buyModalTotal", won(total));
+    }
 
     async function autofillStockInfo() {
         const code = $("inputStockCode").value.trim();
@@ -308,6 +385,11 @@
             if (r.status === "success") {
                 setText("buyStockNameHint", `${r.name} (${r.market || "-"})`);
                 if (!$("inputBuyPrice").value && r.close_price) $("inputBuyPrice").value = r.close_price;
+                if (ACCOUNT === "rec" && !$("inputBuyQty").value) {
+                    const q = autoBuyQty(Number($("inputBuyPrice").value) || 0);
+                    if (q) $("inputBuyQty").value = q;
+                }
+                updateBuyTotal();
             }
         } catch (e) { console.error(e); }
     }
