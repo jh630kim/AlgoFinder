@@ -34,6 +34,28 @@ app.register_blueprint(api_bp)
 app.register_blueprint(paper_api_bp)
 
 
+def _latest_trading_date() -> str:
+    """수급 일별 데이터(InvestorTradingDaily)의 최신 거래일자를 'YYYY-MM-DD'로 반환합니다.
+
+    메인 대시보드 상단의 '최근 거래일' 칩과 동일한 소스를 사용해 투자제안 화면의
+    추천 기준일 기본값 및 '최근 수집일' 표시를 서버 렌더 시점에 채우기 위한 헬퍼입니다.
+
+    :return: 최신 거래일 문자열(YYYY-MM-DD). 데이터가 없으면 빈 문자열.
+    """
+    from sqlalchemy import desc
+    from backend.app.models.investor_trading_daily import InvestorTradingDaily
+    session = next(db_manager.get_session())
+    try:
+        rec = (
+            session.query(InvestorTradingDaily.date)
+            .order_by(desc(InvestorTradingDaily.date))
+            .first()
+        )
+        return rec[0] if rec and rec[0] else ""
+    finally:
+        session.close()
+
+
 def is_mobile_user_agent(user_agent_str: str) -> bool:
     """요청의 User-Agent 헤더를 검사하여 모바일 기기 접속 여부를 판별합니다."""
     if not user_agent_str:
@@ -70,13 +92,13 @@ def proposal():
     user_agent = request.headers.get("User-Agent", "")
     if is_mobile_user_agent(user_agent):
         return redirect(url_for("proposal_mobile"))
-    return render_template("proposal.html")
+    return render_template("proposal.html", latest_trading_date=_latest_trading_date())
 
 
 @app.route("/proposal-mobile")
 def proposal_mobile():
     """투자제안 모바일 TEST 전용 페이지 라우트."""
-    return render_template("proposal_mobile.html")
+    return render_template("proposal_mobile.html", latest_trading_date=_latest_trading_date())
 
 
 if __name__ == "__main__":

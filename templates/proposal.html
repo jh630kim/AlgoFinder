@@ -19,11 +19,11 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <label style="color: #38bdf8; font-size: 15px; font-weight: 700;">📅 추천 기준일:</label>
-                        <input type="date" id="recTargetDate" value="2026-08-19" style="background: #0f172a; color: #fff; border: 1px solid #38bdf8; padding: 7px 12px; border-radius: 8px; font-weight: 700; font-size: 14px;">
+                        <input type="date" id="recTargetDate" value="{{ latest_trading_date }}" style="background: #0f172a; color: #fff; border: 1px solid #38bdf8; padding: 7px 12px; border-radius: 8px; font-weight: 700; font-size: 14px;">
                         <button id="btnFetchRec" style="background: linear-gradient(135deg, #38bdf8, #0284c7); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 700; cursor: pointer;">🔍 당일 조회</button>
                     </div>
                     <div style="color: #94a3b8; font-size: 13px; display: flex; align-items: center; gap: 14px;">
-                        <span>📌 최근 수집일: <strong style="color: #34d399;">2026-08-19</strong></span>
+                        <span>📌 최근 수집일: <strong style="color: #34d399;">{{ latest_trading_date or '-' }}</strong></span>
                         <span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;">💡 퀀트 규칙: 오늘 신호 포착 ➔ 지정가 매수/매도 체결</span>
                     </div>
                 </div>
