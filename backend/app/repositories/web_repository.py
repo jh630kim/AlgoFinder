@@ -138,14 +138,26 @@ class WebRepository:
             for r in records
         ]
 
-    def get_stock_chart_data(self, stock_code: str, limit: int = 120) -> List[Dict[str, Any]]:
-        """해당 종목의 최신 OHLCV 및 4대 주체 수급을 날짜 오름차순으로 조회하고 백엔드 퀀트 전략 시그널을 연동합니다."""
+    def get_stock_chart_data(self, stock_code: str, limit: int = 120, end_date: str = None) -> List[Dict[str, Any]]:
+        """해당 종목의 최신 OHLCV 및 4대 주체 수급을 날짜 오름차순으로 조회하고 백엔드 퀀트 전략 시그널을 연동합니다.
+
+        :param stock_code: 6자리 종목코드
+        :param limit: 반환할 최근 거래일 수(기본 120)
+        :param end_date: 끝 날짜(YYYYMMDD). 지정 시 이 날짜 이하 데이터만 대상으로 하며,
+                         해당일에 거래가 없으면 직전 거래일까지 자동으로 잘린다. None이면 DB 최신일 기준.
+        :return: 날짜 오름차순 차트 데이터 리스트
+        """
         # 지정된 limit(120일)보다 15일 이전 과거 데이터까지 가져와 지표 사전 연산(15일 워밍업)
         fetch_limit = limit + 15
-        records = (
+        query = (
             self.session.query(InvestorTradingDaily)
             .filter(InvestorTradingDaily.symbol == stock_code)
-            .order_by(desc(InvestorTradingDaily.date))
+        )
+        # 기준일(끝 날짜) 제한: 화면의 기준일 이후(미래) 봉을 차트에서 배제
+        if end_date:
+            query = query.filter(InvestorTradingDaily.date <= end_date)
+        records = (
+            query.order_by(desc(InvestorTradingDaily.date))
             .limit(fetch_limit)
             .all()
         )

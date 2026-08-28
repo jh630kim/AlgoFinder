@@ -21,6 +21,9 @@
     let sellMaxQty = 0;
     let proposalChart = null;
     let lastSummary = null;
+    // 보조 차트 끝 날짜(YYYYMMDD): 매수추천 표는 판단 기준일(D-1), 그 외 표는 기준일(D-0)
+    let chartEndSignal = null;
+    let chartEndEval = null;
 
     const $ = (id) => document.getElementById(id);
     const won = (n) => (Math.round(Number(n) || 0)).toLocaleString() + " 원";
@@ -185,6 +188,10 @@
                 fetch(`/api/paper-trading/portfolio?account_type=${ACCOUNT}&target_date=${td}&mode=${MODE}`).then((r) => r.json()),
                 fetch(`/api/recommended-stocks?target_date=${td}&mode=${MODE}`).then((r) => r.json()),
             ]);
+            // 차트 끝 날짜는 렌더(=행 버튼 배선)보다 먼저 확정해야 한다.
+            // wireRowButtons가 이 값을 읽어 차트 요청에 end 파라미터로 싣기 때문.
+            chartEndEval = rec.eval_date || pf.eval_date || td;
+            chartEndSignal = rec.signal_date || pf.signal_date || chartEndEval;
             if (pf.status === "success") {
                 renderSummary(pf.summary);
                 renderHoldings(pf.positions || []);
@@ -424,10 +431,12 @@
             }));
         box.querySelectorAll("[data-sell]").forEach((b) =>
             b.addEventListener("click", () => openSellModal(JSON.parse(b.getAttribute("data-sell").replace(/&#39;/g, "'")))));
+        // 매수추천 표(recBody)는 판단 기준일(D-1)까지, 보유/매도신호 표는 기준일(D-0)까지
+        const chartEnd = box.id === "recBody" ? chartEndSignal : chartEndEval;
         box.querySelectorAll("[data-chart]").forEach((b) =>
             b.addEventListener("click", () => {
                 const [code, name] = b.getAttribute("data-chart").split("|");
-                openChartModal(code, name);
+                openChartModal(code, name, chartEnd);
             }));
     }
 
@@ -536,13 +545,14 @@
     }
 
     // ── 차트 모달 ─────────────────────────────────────────────
-    async function openChartModal(code, name) {
+    async function openChartModal(code, name, endDate) {
         const m = $("stockChartModal");
         if (!m) return;
         setText("chartModalTitle", `📈 ${name} (${code}) 최근 시세`);
         m.classList.add("active");
         try {
-            const r = await fetch(`/api/stock-chart/${code}?limit=120`).then((x) => x.json());
+            const qs = endDate ? `?limit=120&end=${encodeURIComponent(endDate)}` : "?limit=120";
+            const r = await fetch(`/api/stock-chart/${code}${qs}`).then((x) => x.json());
             drawChart((r.data || []));
         } catch (e) { console.error(e); }
     }

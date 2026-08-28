@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 import logging
 from sqlalchemy.orm import Session
 import FinanceDataReader as fdr
-from pykrx import stock
 from backend.app.repositories.stock_master_repository import StockMasterRepository
 from backend.app.repositories.target_stocks_repository import TargetStocksRepository
 
@@ -110,6 +109,14 @@ class StockMasterCollector:
         :param ticker: 지수 티커 (예: '1028' - KOSPI 200, '2203' - KOSDAQ 150)
         :return: 6자리 종목코드 문자열 리스트
         """
+        # pykrx는 import 시 KRX 세션 로그인을 시도하므로(오프라인/차단 환경에서 실패),
+        # 실제로 지수 구성종목이 필요한 이 시점에만 지연 import 한다.
+        try:
+            from pykrx import stock
+        except Exception as exc:  # 네트워크/로그인 실패 등
+            logger.error("pykrx 로드 실패로 지수 %s 구성종목 수집 불가: %s", ticker, exc)
+            return []
+
         now = datetime.now()
         for i in range(7):
             target_date = (now - timedelta(days=i)).strftime("%Y%m%d")

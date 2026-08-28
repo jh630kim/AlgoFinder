@@ -147,12 +147,19 @@ def aggregate_chart():
 
 @api_bp.route("/stock-chart/<stock_code>", methods=["GET"])
 def stock_chart(stock_code: str):
-    """해당 종목의 OHLCV + 4대 수급 데이터 JSON 반환 API."""
+    """해당 종목의 OHLCV + 4대 수급 데이터 JSON 반환 API.
+
+    쿼리 파라미터 `end`(YYYY-MM-DD 또는 YYYYMMDD)를 주면 그 날짜까지만 그린다.
+    - 모의투자 매수추천 차트: 판단 기준일(D-1)
+    - 자산/보유·매도신호 차트, 투자제안 전체: 기준일(D-0)
+    """
     limit = int(request.args.get("limit", 120))
+    end_raw = request.args.get("end", "").strip()
+    end_date = end_raw.replace("-", "") if end_raw else None
     session = next(db_manager.get_session())
     try:
         repo = WebRepository(session)
-        data = repo.get_stock_chart_data(stock_code, limit=limit)
+        data = repo.get_stock_chart_data(stock_code, limit=limit, end_date=end_date)
         return jsonify({"status": "success", "stock_code": stock_code, "data": data})
     finally:
         session.close()
