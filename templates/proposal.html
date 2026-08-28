@@ -123,9 +123,12 @@
 
             <!-- 🟢 [컴포넌트 3] 퀀트 전략별 TOP 1~3위 매수 추천 종목 표 (우측 수동 매수 실행 버튼 포함) -->
             <section class="card" style="border-color: rgba(16, 185, 129, 0.5);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
                     <h3 style="margin: 0; color: #10b981; font-size: 16px; font-weight: 800;">🟢 퀀트 전략별 TOP 1~3위 매수 추천 종목 표</h3>
-                    <button id="btnOpenManualBuyModal" style="background: linear-gradient(135deg, #00ff87, #10b981); color: #0f172a; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 800; font-size: 13.5px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,255,135,0.3);">🛒 수동 매수 실행</button>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button id="btnNotifyRecommendations" style="background: linear-gradient(135deg, #6366f1, #4338ca); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 800; font-size: 13.5px; cursor: pointer; box-shadow: 0 4px 15px rgba(99,102,241,0.3);">📤 추천종목 전달</button>
+                        <button id="btnOpenManualBuyModal" style="background: linear-gradient(135deg, #00ff87, #10b981); color: #0f172a; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 800; font-size: 13.5px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,255,135,0.3);">🛒 수동 매수 실행</button>
+                    </div>
                 </div>
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">

@@ -455,3 +455,36 @@ def sell_position():
         })
     finally:
         session.close()
+
+
+@paper_api_bp.route("/proposal/notify-recommendations", methods=["POST"])
+def notify_recommendations():
+    """현재 기준일의 투자제안 매수 추천 + prop 보유 매도 시그널을 디스코드로 전달합니다.
+
+    매수 추천은 종목코드 기준 병합(전략별 확률 표기), 매도는 prop 계좌 보유 종목의 기준일
+    매도 신호를 대상으로 한다. 매수·매도 모두 0개면 '추천 없음' 안내를 발송한다(미발송 아님).
+    """
+    req = request.get_json(silent=True) or {}
+    target_date = _ymd(req.get("target_date"))
+    session = next(db_manager.get_session())
+    try:
+        from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
+        from backend.app.services.proposal_notify_builder import ProposalNotifyBuilder
+        from backend.app.services.discord_notifier import DiscordNotifier
+
+        # 투자제안(advice) 모드 — /api/recommended-stocks / portfolio 와 동일 소스
+        adv = ProposalAdvisorCache.get(session, target_date, "advice")
+        rec = adv.get_recommendations(target_date)
+        pos_dicts = [p.to_dict() for p in PaperTradingRepository(session).get_positions(account_type="prop")]
+        view = adv.build_portfolio_view(pos_dicts, target_date)
+
+        message, buy_n, sell_n = ProposalNotifyBuilder().build(
+            _dash(target_date), _dash(rec.get("eval_date") or target_date),
+            rec.get("data", []), view.get("sell_signals", []),
+        )
+        result = DiscordNotifier().send(message)
+        if not result["ok"]:
+            return jsonify({"status": "error", "message": result["message"]}), 502
+        return jsonify({"status": "success", "buy_count": buy_n, "sell_count": sell_n})
+    finally:
+        session.close()

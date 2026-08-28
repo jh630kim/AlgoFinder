@@ -57,6 +57,7 @@
 
         bindClick("btnFetchRec", refresh);
         bindClick("btnNextDayRec", nextDay);
+        bindClick("btnNotifyRecommendations", notifyRecommendations);
         bindClick("btnResetPortfolio", resetPortfolio);
         bindClick("btnOpenManualBuyModal", () => openBuyModal());
         bindClick("btnCloseModal", closeBuyModal);
@@ -193,6 +194,31 @@
             console.error("proposal refresh error:", e);
         } finally {
             hideLoading();
+        }
+    }
+
+    // 투자제안: 현재 기준일의 매수 추천 + 보유 매도 시그널을 디스코드로 전달
+    async function notifyRecommendations() {
+        if (ACCOUNT !== "prop") return;
+        if (!confirm("현재 기준일의 매수·매도 추천을 디스코드로 전달할까요?")) return;
+        const btn = $("btnNotifyRecommendations");
+        const orig = btn ? btn.textContent : "";
+        if (btn) { btn.disabled = true; btn.textContent = "전달 중…"; }
+        try {
+            const r = await fetch("/api/proposal/notify-recommendations", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ target_date: targetDate() }),
+            }).then((x) => x.json());
+            if (r.status === "success") {
+                alert(`디스코드로 매수 ${r.buy_count}건 · 매도 ${r.sell_count}건을 전달했습니다.`);
+            } else {
+                alert(r.message || "디스코드 전달에 실패했습니다.");
+            }
+        } catch (e) {
+            console.error("notifyRecommendations error:", e);
+            alert("디스코드 전달 요청 중 오류가 발생했습니다.");
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = orig; }
         }
     }
 
