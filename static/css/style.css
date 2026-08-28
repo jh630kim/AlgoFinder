@@ -382,3 +382,156 @@ body {
 }
 .btn-buy-action:hover, .btn-sell-action:hover { transform: scale(1.05); }
 .btn-chart-view:hover { background: rgba(56, 189, 248, 0.3); color: #fff; }
+
+/* ===== 투자제안 '당일 조회' 진행 중 풀스크린 로딩 오버레이 ===== */
+.proposal-loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(2, 6, 23, 0.72);
+    backdrop-filter: blur(6px);
+    z-index: 2500;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+.proposal-loading-overlay.active { display: flex; }
+.proposal-loading-overlay .pl-spinner {
+    width: 46px; height: 46px;
+    border: 4px solid rgba(56, 189, 248, 0.25);
+    border-top-color: #38bdf8;
+    border-radius: 50%;
+    animation: pl-spin 0.9s linear infinite;
+}
+.proposal-loading-overlay .pl-text {
+    font-size: 14px; font-weight: 800; color: #38bdf8;
+    display: flex; align-items: center; gap: 8px;
+}
+.proposal-loading-overlay .pl-sub {
+    font-size: 12px; color: #94a3b8;
+}
+@keyframes pl-spin { to { transform: rotate(360deg); } }
+
+/* =====================================================================
+   투자제안(모) 전용 스타일 — <body class="mobile-view"> 아래에서만 적용
+   (PC 화면에는 영향을 주지 않도록 모든 규칙을 .mobile-view 로 스코프)
+   기준 단말: 갤럭시 S24 울트라(논리 뷰포트 약 384~412px, 매우 긴 세로)
+   ===================================================================== */
+.mobile-view {
+    padding-bottom: 76px;                 /* 하단 고정 탭바 높이만큼 확보 */
+    -webkit-text-size-adjust: 100%;
+}
+
+/* 모바일 카드형 행 아이템 (표 대체) */
+.mobile-view .mobile-card-item {
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+.mobile-view .mobile-card-item:last-child { margin-bottom: 0; }
+
+/* 스티키 제어 패널: 스크롤 시 상단 고정 */
+.mobile-view .sticky-control-bar {
+    position: sticky;
+    top: 8px;
+    z-index: 50;
+    display: block;                       /* PC 가로 flex 정렬 해제 */
+}
+
+/* 제어 패널 하단 요약(최근 수집일 / 평가 기준일 / 휴장일 안내) */
+.mobile-view .mobile-eval-summary {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 11.5px;
+    color: #94a3b8;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+}
+.mobile-view #evalDateNote {
+    width: 100%;
+    color: #f59e0b;
+    font-weight: 700;
+}
+
+/* 터치 타깃 최소 44px 확보 */
+.mobile-view button,
+.mobile-view input[type="date"],
+.mobile-view input[type="text"],
+.mobile-view input[type="number"] {
+    min-height: 44px;
+}
+.mobile-view .mobile-card-item button { min-height: 40px; }
+
+/* 모달: 좁은 화면 폭·소프트키보드 대응 */
+.mobile-view .modal-box {
+    width: calc(100% - 24px);
+    max-width: 460px;
+    max-height: 88vh;
+    padding: 18px;
+}
+.mobile-view .modal-box .modal-actions {
+    position: sticky;
+    bottom: 0;
+    background: #0f172a;
+    padding-top: 12px;
+    margin: 0 -18px -18px;
+    padding: 12px 18px 18px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* 차트 모달 캔버스: 세로 화면에 맞춰 축소 */
+.mobile-view #stockChartModal .modal-box > div:last-child { height: 260px; }
+
+/* 로딩 오버레이 문구가 좁은 폭에서 넘치지 않도록 */
+.mobile-view .proposal-loading-overlay .pl-text {
+    font-size: 13px;
+    text-align: center;
+    padding: 0 20px;
+}
+
+/* ===== 하단 고정 탭바 ===== */
+.mobile-bottom-nav {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 200;
+    display: flex;
+    background: #0f172a;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+}
+.mobile-nav-item {
+    flex: 1;
+    text-align: center;
+    padding: 12px 4px calc(12px + env(safe-area-inset-bottom, 0px));
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+    text-decoration: none;
+}
+.mobile-nav-item.active {
+    color: #38bdf8;
+    border-top: 2px solid #38bdf8;
+    margin-top: -1px;
+}
+/* 비활성 탭: 클릭 불가 + 흐리게 */
+.mobile-nav-item.disabled {
+    color: #475569;
+    opacity: 0.5;
+    pointer-events: none;
+    cursor: default;
+}
+
+/* S24 울트라보다 좁은 단말에서 숫자 줄바꿈 방지 */
+@media (max-width: 380px) {
+    .mobile-view #pfInitial,
+    .mobile-view #pfCash,
+    .mobile-view #pfStockValue,
+    .mobile-view #pfTotalAsset { font-size: 13px; }
+}

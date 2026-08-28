@@ -51,6 +51,10 @@ class ProposalAdvisor:
         self._processed: Dict[str, Any] = {}
         self._market_map: Dict[str, str] = {}
 
+    def load(self, target_date: str) -> None:
+        """기준일 시세 데이터를 로딩·캐싱합니다(공유 캐시 등 외부에서 쓰는 공개 진입점)."""
+        self._load(target_date)
+
     def _load(self, target_date: str) -> None:
         """기준일(YYYYMMDD)까지의 시세 데이터 및 평가 기준 거래일을 1회 로딩·캐싱합니다."""
         if self._loaded_for == target_date:
@@ -74,6 +78,23 @@ class ProposalAdvisor:
         if key not in self._processed:
             self._processed[key] = STRATEGY_MAP[key].calculate_indicators(self._df)
         return self._processed[key]
+
+    def _sell_rows_for(self, key: str, held: set):
+        """보유 종목의 기준일 매도 신호 행을 반환합니다(연산량 축소).
+
+        추천 계산이 이미 전체 종목 지표를 캐싱했으면 그대로 재사용하고, 아니면
+        보유 종목만으로 지표를 연산합니다. 지표는 종목별 롤링이라 대상 종목만
+        추려도 개별 결과는 전체 연산과 동일합니다.
+
+        :param key: 전략 키(S1~S5)
+        :param held: 보유 종목코드 집합
+        :return: signal_sell=True 인 기준일 행 DataFrame
+        """
+        pdf = self._processed.get(key)
+        if pdf is None:
+            subset = self._df[self._df["symbol"].isin(held)]
+            pdf = STRATEGY_MAP[key].calculate_indicators(subset)
+        return pdf[(pdf["date"] == self._eff_date) & (pdf["signal_sell"].fillna(False))]
 
     def get_recommendations(self, target_date: str, top_n: int = 3) -> Dict[str, Any]:
         """기준일 종가 기준 8전략 각각의 매수 신호 TOP N 추천 목록을 반환합니다.
@@ -122,8 +143,7 @@ class ProposalAdvisor:
         strat_sells: Dict[str, List[str]] = {}
         if self._eff_date and held:
             for key in STRATEGY_MAP:
-                pdf = self._processed_df(key)
-                d = pdf[(pdf["date"] == self._eff_date) & (pdf["signal_sell"].fillna(False))]
+                d = self._sell_rows_for(key, held)
                 for sym in d["symbol"]:
                     if sym in held:
                         strat_sells.setdefault(sym, []).append(STRATEGY_LABELS.get(key, key))

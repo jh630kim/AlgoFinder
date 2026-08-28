@@ -160,6 +160,7 @@ class WebRepository:
                 "low": float(r.low_price or 0),
                 "close": float(r.close_price or 0),
                 "volume": int(r.volume or 0),
+                "is_suspended": int(getattr(r, "is_suspended", 0) or 0),
                 "net_foreign": float(r.foreigner_net_buy or 0),
                 "net_institution": float(r.institution_net_buy or 0),
                 "net_pension": float(r.pension_net_buy or 0),

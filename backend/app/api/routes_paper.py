@@ -143,8 +143,8 @@ def recommended_stocks():
     target_date = _ymd(request.args.get("target_date") or request.args.get("date"))
     session = next(db_manager.get_session())
     try:
-        from backend.app.services.proposal_advisor import ProposalAdvisor
-        result = ProposalAdvisor(session).get_recommendations(target_date)
+        from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
+        result = ProposalAdvisorCache.get(session, target_date).get_recommendations(target_date)
         return jsonify({"status": "success", **result})
     finally:
         session.close()
@@ -223,16 +223,23 @@ def get_portfolio():
         positions, sell_signals, eval_date = pos_dicts, [], None
         stock_value = sum(p["buy_price"] * p["quantity"] for p in pos_dicts)
         if target_date_raw:
-            from backend.app.services.proposal_advisor import ProposalAdvisor
-            view = ProposalAdvisor(session).build_portfolio_view(pos_dicts, _ymd(target_date_raw))
+            from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
+            td = _ymd(target_date_raw)
+            view = ProposalAdvisorCache.get(session, td).build_portfolio_view(pos_dicts, td)
             positions, sell_signals = view["positions"], view["sell_signals"]
             stock_value, eval_date = view["stock_value"], view["eval_date"]
 
         total_asset = pf.cash_balance + stock_value
+
+        # 추천 기준일(없으면 오늘) 시점의 코스피 20일선 방향(상승장/하락장/횡보) 산출
+        from backend.app.services.kospi_regime_analyzer import KospiRegimeAnalyzer
+        kospi_regime = KospiRegimeAnalyzer(session).analyze(_ymd(target_date_raw))
+
         return jsonify({
             "status": "success",
             "account_type": account_type,
             "eval_date": eval_date,
+            "kospi_regime": kospi_regime,
             "portfolio": pf.to_dict(),
             "summary": {
                 "initial_balance": int(pf.initial_balance),

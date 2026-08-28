@@ -6,16 +6,15 @@
     <title>StockInfo PRO - 모바일 AI 퀀트 실전 투자제안</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        /* 모바일 TEST 전용 오버라이드 스타일 */
-        body { padding-bottom: 70px; }
-        .mobile-card-item {
-            background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px; padding: 16px; margin-bottom: 14px;
-        }
-    </style>
 </head>
-<body>
+<body class="mobile-view">
+    <!-- ⏳ '당일 조회' 진행 중 풀스크린 로딩 오버레이 -->
+    <div id="proposalLoadingOverlay" class="proposal-loading-overlay">
+        <div class="pl-spinner"></div>
+        <div class="pl-text"><span>⏳</span><span>8개 퀀트 전략 신호 분석 중…</span></div>
+        <div class="pl-sub">기준일 종가 기준 평가 중</div>
+    </div>
+
     <!-- 📱 모바일 Top Header -->
     <header class="card" style="margin: 12px 12px 16px 12px; padding: 16px; display: flex; justify-content: space-between; align-items: center;">
         <div>
@@ -36,6 +35,11 @@
             <div style="margin-top: 10px; font-size: 11px; color: #94a3b8; text-align: center;">
                 💡 퀀트 규칙: 오늘 신호 포착 ➔ 지정가 매수/매도 체결
             </div>
+            <div class="mobile-eval-summary">
+                <span>📌 최근 수집일: <strong style="color:#34d399;">{{ latest_trading_date or '-' }}</strong></span>
+                <span>🎯 평가 기준일: <strong id="evalDateValue" style="color:#38bdf8;">-</strong></span>
+                <span id="evalDateNote" style="display:none;">(선택일이 휴장일이라 직전 거래일로 평가되었습니다)</span>
+            </div>
         </section>
 
         <!-- 💰 [컴포넌트 1] 자산 현황 (모바일 2열 Grid) -->
@@ -44,6 +48,7 @@
                 <h3 style="margin: 0; color: #fbbf24; font-size: 15px; font-weight: 800;">💰 자산 현황</h3>
                 <button id="btnResetPortfolio" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11px; cursor: pointer;">🔄 자산 초기화</button>
             </div>
+            <div id="kospiRegimeBadge" data-regime="{{ kospi_regime.regime if kospi_regime else '' }}" style="font-size: 11px; color: #cbd5e1; background: rgba(15,23,42,0.8); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(251,191,36,0.3); margin-bottom: 12px;">{{ kospi_regime.text if kospi_regime else '📊 코스피 20일선: -' }}</div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
                 <div style="background: rgba(15, 23, 42, 0.8); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
@@ -90,9 +95,9 @@
 
     <!-- 📱 모바일 고정 하단 네비게이션 바 -->
     <nav class="mobile-bottom-nav">
-        <a href="/" class="mobile-nav-item"><span>🏠 메인</span></a>
-        <a href="/backtest" class="mobile-nav-item"><span>🚀 시뮬</span></a>
-        <a href="/recommendation" class="mobile-nav-item"><span>🎯 모의</span></a>
+        <span class="mobile-nav-item disabled"><span>🏠 메인</span></span>
+        <span class="mobile-nav-item disabled"><span>🚀 시뮬</span></span>
+        <span class="mobile-nav-item disabled"><span>🎯 모의</span></span>
         <a href="/proposal-mobile" class="mobile-nav-item active"><span>💡 제안(모)</span></a>
     </nav>
 
@@ -122,7 +127,7 @@
                 <label style="display: block; font-size: 12px; color: #cbd5e1; font-weight: 700; margin-bottom: 4px;">📅 매수 지정일</label>
                 <input type="date" id="inputBuyDate" value="2026-08-22" style="width: 100%; background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; border-radius: 8px; font-size: 13px; font-weight: 700; box-sizing: border-box;">
             </div>
-            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <div class="modal-actions">
                 <button id="btnCancelModal" style="background: #334155; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;">취소</button>
                 <button id="btnConfirmManualBuy" style="background: #00ff87; color: #0f172a; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 800; cursor: pointer;">매수 확인</button>
             </div>
@@ -155,7 +160,7 @@
                 <input type="date" id="inputSellDate" style="width: 100%; background: #0f172a; color: #fff; border: 1px solid #334155; padding: 8px; border-radius: 8px; font-size: 13px; font-weight: 700; box-sizing: border-box;">
             </div>
             <div style="margin-bottom: 16px; font-size: 12px; color: #fca5a5;">총 정산 예정: <strong id="sellModalTotal" style="color:#fff;">- 원</strong></div>
-            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <div class="modal-actions">
                 <button id="btnCancelSellModal" style="background: #334155; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;">취소</button>
                 <button id="btnConfirmManualSell" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 800; cursor: pointer;">매도 확인</button>
             </div>

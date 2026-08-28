@@ -65,8 +65,12 @@ class MarketDataRepository:
             if not sym or not date_str:
                 continue
 
+            # 거래정지 판별: 거래량 0 + 고가=저가 (KRX 정상 거래일은 항상 거래량 > 0)
+            suspended = self._is_suspended_row(item)
+
             existing = self.get_by_symbol_and_date(sym, date_str)
             if existing:
+                existing.is_suspended = suspended
                 existing.open_price = item.get("open_price", existing.open_price)
                 existing.high_price = item.get("high_price", existing.high_price)
                 existing.low_price = item.get("low_price", existing.low_price)
@@ -92,10 +96,26 @@ class MarketDataRepository:
                     institution_net_buy=item.get("institution_net_buy"),
                     pension_net_buy=item.get("pension_net_buy"),
                     financial_net_buy=item.get("financial_net_buy"),
-                    other_corp_net_buy=item.get("other_corp_net_buy")
+                    other_corp_net_buy=item.get("other_corp_net_buy"),
+                    is_suspended=suspended
                 )
                 self.session.add(new_record)
             saved_count += 1
 
         self.session.commit()
         return saved_count
+
+    @staticmethod
+    def _is_suspended_row(item: Dict[str, Any]) -> int:
+        """단일 시세 레코드가 거래정지일인지 판별합니다.
+
+        :param item: OHLCV 딕셔너리 (volume, high_price, low_price 사용)
+        :return: 거래정지면 1, 아니면 0
+        """
+        try:
+            vol = float(item.get("volume") or 0)
+            high = float(item.get("high_price") or 0)
+            low = float(item.get("low_price") or 0)
+        except (TypeError, ValueError):
+            return 0
+        return 1 if (vol == 0 and high == low) else 0

@@ -46,6 +46,20 @@ class DatabaseManager:
                 except Exception:
                     pass  # 이미 컬럼이 존재하는 경우 예외 무시
 
+            # investor_trading_daily 거래정지 플래그 컬럼 마이그레이션 안전 처리
+            try:
+                conn.execute(text("ALTER TABLE investor_trading_daily ADD COLUMN is_suspended INTEGER NOT NULL DEFAULT 0"))
+            except Exception:
+                pass  # 이미 컬럼이 존재하는 경우 예외 무시
+            # 기존 적재분 일회성 백필: 거래량 0 + 고가=저가 → 거래정지로 표시
+            try:
+                conn.execute(text(
+                    "UPDATE investor_trading_daily SET is_suspended = 1 "
+                    "WHERE is_suspended = 0 AND volume = 0 AND high_price = low_price"
+                ))
+            except Exception:
+                pass
+
     def get_session(self) -> Generator[Session, None, None]:
         """
         API 요청 처리용 데이터베이스 세션을 생성하고 반환합니다.

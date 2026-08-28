@@ -43,6 +43,27 @@ class MarketIndicesRepository:
         """
         return self.session.query(func.max(MarketIndicesDaily.date)).scalar()
 
+    def get_kospi_series(self, end_date: str, limit: int) -> List[Dict[str, Any]]:
+        """
+        기준일(YYYYMMDD) 이하 코스피 종가 시계열을 최신순 limit개 조회해
+        과거→현재(오름차순)로 정렬하여 반환합니다. 종가가 없는(None) 행은 제외합니다.
+
+        :param end_date: 조회 종료 일자 (YYYYMMDD, 이 일자 포함)
+        :param limit: 최신순으로 가져올 최대 거래일 수
+        :return: [{"date": "YYYYMMDD", "kospi_close": float}, ...] (오름차순)
+        """
+        rows = (
+            self.session.query(MarketIndicesDaily.date, MarketIndicesDaily.kospi_close)
+            .filter(
+                MarketIndicesDaily.date <= end_date,
+                MarketIndicesDaily.kospi_close.isnot(None),
+            )
+            .order_by(MarketIndicesDaily.date.desc())
+            .limit(limit)
+            .all()
+        )
+        return [{"date": d, "kospi_close": float(c)} for d, c in reversed(rows)]
+
     def bulk_upsert(self, items: List[Dict[str, Any]]) -> int:
         """
         주요 지수 및 환율 데이터를 대량 Upsert(등록/수정)합니다.

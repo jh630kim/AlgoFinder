@@ -21,6 +21,46 @@ document.addEventListener("DOMContentLoaded", () => {
     initPanDragHandlers();
 });
 
+/** 거래정지 연속 구간을 [시작 index, 끝 index] 목록으로 묶어 반환합니다. */
+function suspendedSpans(rows) {
+    const spans = [];
+    let start = -1;
+    (rows || []).forEach((d, i) => {
+        const on = !!(d && d.is_suspended);
+        if (on && start < 0) start = i;
+        if (!on && start >= 0) { spans.push([start, i - 1]); start = -1; }
+    });
+    if (start >= 0) spans.push([start, (rows || []).length - 1]);
+    return spans;
+}
+
+/** 거래정지 구간을 회색 반투명 밴드 + '거래정지' 라벨로 칠하는 Chart.js 플러그인을 생성합니다. */
+function suspendedBandPlugin(spans) {
+    return {
+        id: "suspendedBand",
+        beforeDatasetsDraw(chart) {
+            if (!spans || !spans.length) return;
+            const { ctx, chartArea: area, scales: { x } } = chart;
+            if (!x) return;
+            const half = Math.abs(x.getPixelForValue(1) - x.getPixelForValue(0)) / 2 || 4;
+            ctx.save();
+            spans.forEach(([s, e]) => {
+                const x1 = x.getPixelForValue(s);
+                const x2 = x.getPixelForValue(e);
+                const left = Math.min(x1, x2) - half;
+                const right = Math.max(x1, x2) + half;
+                ctx.fillStyle = "rgba(148, 163, 184, 0.18)";
+                ctx.fillRect(left, area.top, right - left, area.bottom - area.top);
+                ctx.fillStyle = "#94a3b8";
+                ctx.font = "700 10px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("거래정지", (left + right) / 2, area.top + 12);
+            });
+            ctx.restore();
+        },
+    };
+}
+
 /** 🔺 스퀴즈 전용 빗금(Hatched) 삼각형 오프스크린 Canvas 포인트 생성 헬퍼 */
 function createHatchedTriangleCanvas(color, isReversed = false, size = 18) {
     const canvas = document.createElement("canvas");
@@ -831,6 +871,7 @@ function renderTechChart(rawData, titleText = "📈 기술적 매매지표") {
                 },
             },
         },
+        plugins: [suspendedBandPlugin(suspendedSpans(rawData))],
     });
 }
 
@@ -949,5 +990,6 @@ function renderPriceSupplyChart(data, titleText = "📊 주가 & 수급 통합 �
                 ySupply: { type: "linear", position: "right", grid: { color: "rgba(255,255,255,0.05)" } },
             },
         },
+        plugins: [suspendedBandPlugin(suspendedSpans(data))],
     });
 }

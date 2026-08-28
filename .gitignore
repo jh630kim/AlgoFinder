@@ -45,3 +45,6 @@ data/backtest_render_cache.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code 로컬 설정·훅 (개인·비공개, git 미추적)
+.claude/

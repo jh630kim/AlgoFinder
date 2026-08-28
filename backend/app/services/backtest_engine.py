@@ -100,7 +100,8 @@ class BacktestEngine:
             InvestorTradingDaily.foreigner_net_buy, InvestorTradingDaily.institution_net_buy,
             AllStockMaster.name, AllStockMaster.sector
         ).join(AllStockMaster, InvestorTradingDaily.symbol == AllStockMaster.code) \
-         .join(TargetStocks, InvestorTradingDaily.symbol == TargetStocks.symbol)
+         .join(TargetStocks, InvestorTradingDaily.symbol == TargetStocks.symbol) \
+         .filter(InvestorTradingDaily.is_suspended == 0)  # 거래정지일 제외(지표·시그널 왜곡 방지)
 
         if target_sectors and "ALL" not in [t.upper() for t in target_sectors]:
             query = query.filter(AllStockMaster.sector.in_(target_sectors))

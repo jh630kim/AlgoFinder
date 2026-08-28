@@ -8,6 +8,13 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+    <!-- ⏳ '당일 조회' 진행 중 풀스크린 로딩 오버레이 -->
+    <div id="proposalLoadingOverlay" class="proposal-loading-overlay">
+        <div class="pl-spinner"></div>
+        <div class="pl-text"><span>⏳</span><span>8개 퀀트 전략 매수·매도 신호 분석 중…</span></div>
+        <div class="pl-sub">기준일 종가 기준으로 추천/보유 종목을 평가합니다</div>
+    </div>
+
     <div class="app-layout">
         <!-- 👈 PC 좌측 고정 220px 사이드바 -->
         {% include 'partials/sidebar.html' %}
@@ -27,6 +34,10 @@
                         <span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.4); color: #c084fc; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;">💡 퀀트 규칙: 오늘 신호 포착 ➔ 지정가 매수/매도 체결</span>
                     </div>
                 </div>
+                <div style="margin-top: 8px; color: #94a3b8; font-size: 13px;">
+                    🎯 평가 기준일: <strong id="evalDateValue" style="color: #38bdf8;">-</strong>
+                    <span id="evalDateNote" style="margin-left: 8px; color: #f59e0b; font-weight: 700; display: none;">(선택일이 휴장일이라 직전 거래일로 평가되었습니다)</span>
+                </div>
             </section>
 
             <!-- 💰 [컴포넌트 1] 자산 (포트폴리오 검증 시뮬레이터) (제시된 스크린샷 100% 동일) -->
@@ -34,7 +45,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
                     <h3 style="margin: 0; color: #fbbf24; font-size: 18px; font-weight: 800;">💰 자산 (포트폴리오 검증 시뮬레이터)</h3>
                     <div style="display: flex; gap: 10px; align-items: center;">
-                        <span style="font-size: 12px; color: #cbd5e1; background: rgba(15,23,42,0.8); padding: 4px 12px; border-radius: 12px; border: 1px solid rgba(251,191,36,0.3);">📊 코스피 20일선 (-5일 기준): -</span>
+                        <span id="kospiRegimeBadge" data-regime="{{ kospi_regime.regime if kospi_regime else '' }}" style="font-size: 12px; color: #cbd5e1; background: rgba(15,23,42,0.8); padding: 4px 12px; border-radius: 12px; border: 1px solid rgba(251,191,36,0.3); white-space: nowrap;">{{ kospi_regime.text if kospi_regime else '📊 코스피 20일선: -' }}</span>
                         <button id="btnResetPortfolio" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; padding: 6px 14px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">🔄 자산 초기화 (1,000만원)</button>
                     </div>
                 </div>
@@ -99,12 +110,11 @@
                                 <th style="padding: 10px;">현재가(선택일)</th>
                                 <th style="padding: 10px;">매도 경고 전략</th>
                                 <th style="padding: 10px;">매도 사유</th>
-                                <th style="padding: 10px;">[차트보기]</th>
                             </tr>
                         </thead>
                         <tbody id="sellSignalBody">
                             <tr>
-                                <td colspan="7" style="padding: 20px; color: #64748b;">불러오는 중...</td>
+                                <td colspan="6" style="padding: 20px; color: #64748b;">불러오는 중...</td>
                             </tr>
                         </tbody>
                     </table>

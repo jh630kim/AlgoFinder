@@ -10,14 +10,36 @@ AlgoFinder Flask 웹 백엔드 메인 애플리케이션 (app.py).
 """
 
 import os
+import sys
 from flask import Flask, render_template, request, redirect, url_for
 from dotenv import load_dotenv
+
+# 콘솔 인코딩 방어: 로그 리다이렉트/서비스 실행 환경에서 표준 출력이 cp949로
+# 잡히면 이모지·한글 print 시 UnicodeEncodeError로 프로세스가 죽는다.
+# Python 3.7+ 스트림 재설정으로 UTF-8 고정하고, 실패해도 기동은 계속한다.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+
+def safe_print(message: str) -> None:
+    """표준 출력 인코딩이 문자를 표현하지 못해도 예외 없이 출력한다."""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        enc = (getattr(sys.stdout, "encoding", None) or "ascii")
+        print(message.encode(enc, errors="replace").decode(enc, errors="replace"))
+
 
 # .env 환경 변수 로드
 load_dotenv()
 
 from backend.app.core.database import db_manager
 from backend.app.api import api_bp, paper_api_bp
+from backend.app.repositories.web_repository import WebRepository
+from backend.app.repositories.market_indices_repository import MarketIndicesRepository
 
 # Flask 앱 생성 및 템플릿/스태틱 디렉토리 설정
 app = Flask(
@@ -35,23 +57,43 @@ app.register_blueprint(paper_api_bp)
 
 
 def _latest_trading_date() -> str:
-    """수급 일별 데이터(InvestorTradingDaily)의 최신 거래일자를 'YYYY-MM-DD'로 반환합니다.
+    """수급 일별 데이터의 최신 거래일자를 'YYYY-MM-DD' 형식으로 반환합니다.
 
-    메인 대시보드 상단의 '최근 거래일' 칩과 동일한 소스를 사용해 투자제안 화면의
-    추천 기준일 기본값 및 '최근 수집일' 표시를 서버 렌더 시점에 채우기 위한 헬퍼입니다.
+    메인 대시보드 상단 '📅 최근 거래일' 칩과 동일한 소스
+    (WebRepository.get_market_indices_summary()의 latest_date)를 재사용하여,
+    투자제안 화면의 추천 기준일 기본값 및 '최근 수집일' 표시를 서버 렌더 시점에
+    채우기 위한 헬퍼입니다.
 
-    :return: 최신 거래일 문자열(YYYY-MM-DD). 데이터가 없으면 빈 문자열.
+    :returns: 최신 거래일 문자열('YYYY-MM-DD'). 데이터가 없으면 빈 문자열('').
     """
-    from sqlalchemy import desc
-    from backend.app.models.investor_trading_daily import InvestorTradingDaily
     session = next(db_manager.get_session())
     try:
-        rec = (
-            session.query(InvestorTradingDaily.date)
-            .order_by(desc(InvestorTradingDaily.date))
-            .first()
-        )
-        return rec[0] if rec and rec[0] else ""
+        raw = WebRepository(session).get_market_indices_summary().get("latest_date", "")
+    finally:
+        session.close()
+
+    # DB 저장 포맷은 'YYYYMMDD' → date input이 요구하는 'YYYY-MM-DD'로 변환
+    if raw and raw.isdigit() and len(raw) == 8:
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    # 이미 'YYYY-MM-DD'면 그대로, 데이터 없음('-'/'') 이면 빈 문자열
+    if raw and "-" in raw:
+        return raw
+    return ""
+
+
+def _kospi_regime_ssr() -> dict:
+    """최신 거래일 기준 코스피 20일선 방향(장세) 판정 결과를 서버 렌더용으로 반환합니다.
+
+    투자제안 화면 '📊 코스피 20일선' 배지의 초기값을 첫 HTML 응답에 포함해
+    JS 조회 완료 전 깜빡임을 방지하기 위한 헬퍼입니다.
+
+    :returns: KospiRegimeAnalyzer.analyze() 결과 dict (실패 시 available=False 형태)
+    """
+    from backend.app.services.kospi_regime_analyzer import KospiRegimeAnalyzer
+    session = next(db_manager.get_session())
+    try:
+        latest = MarketIndicesRepository(session).get_max_date() or ""
+        return KospiRegimeAnalyzer(session).analyze(latest)
     finally:
         session.close()
 
@@ -92,18 +134,26 @@ def proposal():
     user_agent = request.headers.get("User-Agent", "")
     if is_mobile_user_agent(user_agent):
         return redirect(url_for("proposal_mobile"))
-    return render_template("proposal.html", latest_trading_date=_latest_trading_date())
+    return render_template(
+        "proposal.html",
+        latest_trading_date=_latest_trading_date(),
+        kospi_regime=_kospi_regime_ssr(),
+    )
 
 
 @app.route("/proposal-mobile")
 def proposal_mobile():
     """투자제안 모바일 TEST 전용 페이지 라우트."""
-    return render_template("proposal_mobile.html", latest_trading_date=_latest_trading_date())
+    return render_template(
+        "proposal_mobile.html",
+        latest_trading_date=_latest_trading_date(),
+        kospi_regime=_kospi_regime_ssr(),
+    )
 
 
 if __name__ == "__main__":
     host = os.getenv("FLASK_HOST", "0.0.0.0")
     port = int(os.getenv("FLASK_PORT", 5000))
     debug = os.getenv("FLASK_DEBUG", "True").lower() == "true"
-    print(f"🚀 AlgoFinder 웹 서버가 http://{host}:{port} 에서 기동됩니다.")
+    safe_print(f"🚀 AlgoFinder 웹 서버가 http://{host}:{port} 에서 기동됩니다.")
     app.run(host=host, port=port, debug=debug)

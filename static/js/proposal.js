@@ -40,6 +40,10 @@
         const codeInput = $("inputStockCode");
         if (codeInput) codeInput.addEventListener("blur", autofillStockInfo);
 
+        // SSR로 주입된 코스피 20일선 배지에 초기 국면 색상 적용
+        const badge = $("kospiRegimeBadge");
+        if (badge) applyRegimeColor(badge, badge.dataset.regime || "");
+
         refresh();
     }
 
@@ -53,9 +57,69 @@
         return dp && dp.value ? dp.value : new Date().toISOString().slice(0, 10);
     }
 
+    // ── 진행 중 로딩 오버레이 ──────────────────────────────────
+    let loadingTimer = null;
+
+    function showLoading() {
+        // 캐시 히트(수십 ms)로 즉시 끝나는 경우 깜빡임 방지: 200ms 뒤에만 표시
+        if (loadingTimer) return;
+        const btn = $("btnFetchRec");
+        if (btn) btn.disabled = true;
+        loadingTimer = setTimeout(() => {
+            const ov = $("proposalLoadingOverlay");
+            if (ov) ov.classList.add("active");
+        }, 200);
+    }
+
+    function hideLoading() {
+        if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
+        const ov = $("proposalLoadingOverlay");
+        if (ov) ov.classList.remove("active");
+        const btn = $("btnFetchRec");
+        if (btn) btn.disabled = false;
+    }
+
+    // 'YYYYMMDD' / 'YYYY-MM-DD' → 'YYYY-MM-DD' (그 외/빈값은 원본 반환)
+    function fmtYmd(v) {
+        const s = String(v || "");
+        if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+        return s;
+    }
+
+    // 실제 평가에 사용된 거래일(eval_date) 표시. 선택일과 다르면 휴장일 안내를 노출
+    function renderEvalDate(evalDate, selectedDate) {
+        const el = $("evalDateValue");
+        const note = $("evalDateNote");
+        const shown = fmtYmd(evalDate);
+        if (el) el.textContent = shown || "-";
+        if (note) note.style.display = (shown && shown !== selectedDate) ? "" : "none";
+    }
+
+    // 코스피 20일선 국면(up/down/flat)에 따라 배지 글자색·테두리색을 지정
+    function applyRegimeColor(el, regime) {
+        const map = {
+            up: { color: "#22c55e", border: "rgba(34,197,94,0.45)" },
+            down: { color: "#ef4444", border: "rgba(239,68,68,0.45)" },
+            flat: { color: "#cbd5e1", border: "rgba(203,213,225,0.35)" },
+        };
+        const c = map[regime] || { color: "#cbd5e1", border: "rgba(251,191,36,0.3)" };
+        el.style.color = c.color;
+        el.style.borderColor = c.border;
+    }
+
+    // 포트폴리오 응답의 kospi_regime 블록을 배지에 반영
+    function renderKospiRegime(kr) {
+        const el = $("kospiRegimeBadge");
+        if (!el || !kr) return;
+        el.textContent = kr.text || "📊 코스피 20일선: -";
+        el.dataset.regime = kr.regime || "";
+        applyRegimeColor(el, kr.regime || "");
+    }
+
     // ── 데이터 로드 ─────────────────────────────────────────────
     async function refresh() {
         const td = targetDate();
+        showLoading();
         try {
             const [pf, rec] = await Promise.all([
                 fetch(`/api/paper-trading/portfolio?account_type=${ACCOUNT}&target_date=${td}`).then((r) => r.json()),
@@ -66,9 +130,13 @@
                 renderHoldings(pf.positions || []);
                 renderSellSignals(pf.sell_signals || []);
             }
+            if (pf.status === "success") renderKospiRegime(pf.kospi_regime);
             if (rec.status === "success") renderRecommendations(rec.data || []);
+            renderEvalDate(rec.eval_date || pf.eval_date, td);
         } catch (e) {
             console.error("proposal refresh error:", e);
+        } finally {
+            hideLoading();
         }
     }
 
@@ -135,7 +203,7 @@
         const box = $("sellSignalBody");
         if (!box) return;
         if (!rows.length) {
-            box.innerHTML = emptyRow(7, "선택한 기준일에 매도 조건이 포착된 보유 종목이 없습니다.");
+            box.innerHTML = emptyRow(6, "선택한 기준일에 매도 조건이 포착된 보유 종목이 없습니다.");
             return;
         }
         box.innerHTML = rows.map((r) => {
@@ -155,7 +223,6 @@
                 <td style="padding:10px;">${won(r.current_price)}</td>
                 <td style="padding:10px;color:#f87171;font-weight:700;">${r.badges.join(", ")}</td>
                 <td style="padding:10px;text-align:left;color:#fca5a5;">🚨 ${r.reason}</td>
-                <td style="padding:10px;"><button class="btn-sell-action" data-sell='${sellData({stock_code:r.code,stock_name:r.name,quantity:r.quantity,current_price:r.current_price})}'>🔻 매도</button></td>
             </tr>`;
         }).join("");
         wireRowButtons(box);
@@ -312,6 +379,44 @@
     }
     function closeChartModal() { const m = $("stockChartModal"); if (m) m.classList.remove("active"); }
 
+    // 거래정지 연속 구간을 [시작 index, 끝 index] 목록으로 묶음
+    function suspendedSpans(rows) {
+        const spans = [];
+        let start = -1;
+        rows.forEach((d, i) => {
+            const on = !!d.is_suspended;
+            if (on && start < 0) start = i;
+            if (!on && start >= 0) { spans.push([start, i - 1]); start = -1; }
+        });
+        if (start >= 0) spans.push([start, rows.length - 1]);
+        return spans;
+    }
+
+    // 거래정지 구간을 회색 반투명 밴드 + '거래정지' 라벨로 칠하는 Chart.js 플러그인
+    function suspendedBandPlugin(spans) {
+        return {
+            id: "suspendedBand",
+            beforeDatasetsDraw(chart) {
+                if (!spans.length) return;
+                const { ctx, chartArea: area, scales: { x } } = chart;
+                ctx.save();
+                spans.forEach(([s, e]) => {
+                    const x1 = x.getPixelForValue(s);
+                    const x2 = x.getPixelForValue(e);
+                    const left = Math.min(x1, x2) - (x.getPixelForValue(1) - x.getPixelForValue(0)) / 2;
+                    const right = Math.max(x1, x2) + (x.getPixelForValue(1) - x.getPixelForValue(0)) / 2;
+                    ctx.fillStyle = "rgba(148, 163, 184, 0.18)";
+                    ctx.fillRect(left, area.top, right - left, area.bottom - area.top);
+                    ctx.fillStyle = "#94a3b8";
+                    ctx.font = "700 10px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.fillText("거래정지", (left + right) / 2, area.top + 12);
+                });
+                ctx.restore();
+            },
+        };
+    }
+
     function drawChart(rows) {
         const cv = $("proposalChartCanvas");
         if (!cv || !window.Chart) return;
@@ -331,6 +436,7 @@
             },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: "#cbd5e1" } } },
                 scales: { x: { ticks: { color: "#64748b", maxTicksLimit: 8 } }, y: { ticks: { color: "#64748b" } } } },
+            plugins: [suspendedBandPlugin(suspendedSpans(rows))],
         });
     }
 })();
