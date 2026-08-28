@@ -58,6 +58,10 @@
         bindClick("btnFetchRec", refresh);
         bindClick("btnNextDayRec", nextDay);
         bindClick("btnNotifyRecommendations", notifyRecommendations);
+        bindClick("btnExportPaper", exportPaper);
+        bindClick("btnImportPaper", () => { const f = $("importPaperFile"); if (f) f.click(); });
+        const impFile = $("importPaperFile");
+        if (impFile) impFile.addEventListener("change", importPaperFromFile);
         bindClick("btnResetPortfolio", resetPortfolio);
         bindClick("btnOpenManualBuyModal", () => openBuyModal());
         bindClick("btnCloseModal", closeBuyModal);
@@ -219,6 +223,63 @@
             alert("디스코드 전달 요청 중 오류가 발생했습니다.");
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = orig; }
+        }
+    }
+
+    // ── 가상매매 JSON 내보내기 / 불러오기 ─────────────────────
+    function downloadJson(obj, filename) {
+        const blob = new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    }
+
+    function ymdStamp() {
+        return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    }
+
+    async function exportPaper() {
+        try {
+            const data = await fetch(`/api/paper-trading/export?account_type=${ACCOUNT}`).then((r) => r.json());
+            downloadJson(data, `algofinder_${ACCOUNT}_${ymdStamp()}.json`);
+        } catch (e) {
+            console.error("exportPaper error:", e);
+            alert("내보내기에 실패했습니다.");
+        }
+    }
+
+    async function importPaperFromFile(ev) {
+        const file = ev.target.files && ev.target.files[0];
+        ev.target.value = "";
+        if (!file) return;
+        let payload;
+        try {
+            payload = JSON.parse(await file.text());
+        } catch (e) {
+            alert("JSON 파일을 읽을 수 없습니다.");
+            return;
+        }
+        if (!confirm("현재 가상매매 기록을 이 파일 내용으로 완전히 교체합니다.\n교체 직전 상태는 백업 파일로 자동 저장됩니다. 계속할까요?")) return;
+        try {
+            payload.account_type = ACCOUNT;
+            const res = await fetch("/api/paper-trading/import", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            }).then((r) => r.json());
+            if (res.status === "success") {
+                if (res.backup) downloadJson(res.backup, `algofinder_${ACCOUNT}_backup_${ymdStamp()}.json`);
+                const im = res.imported || {};
+                alert(`불러오기 완료 (보유 ${im.positions || 0}건 · 체결 ${im.trade_history || 0}건).`);
+                refresh();
+            } else {
+                alert(res.message || "불러오기에 실패했습니다.");
+            }
+        } catch (e) {
+            console.error("importPaper error:", e);
+            alert("불러오기 요청 중 오류가 발생했습니다.");
         }
     }
 

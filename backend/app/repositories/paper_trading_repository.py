@@ -81,6 +81,58 @@ class PaperTradingRepository:
             position.total_amount = position.buy_price * remaining
         self.session.commit()
 
+    def export_account(self, account_type: str = "prop") -> dict:
+        """계좌·보유·체결 이력을 id 없는 딕셔너리 묶음으로 반환합니다(JSON 백업용)."""
+        pf = self.get_or_create_portfolio(account_type)
+        positions = self.session.query(PaperPosition).filter(
+            PaperPosition.account_type == account_type
+        ).all()
+        history = self.session.query(PaperTradeHistory).filter(
+            PaperTradeHistory.account_type == account_type
+        ).all()
+        strip = lambda d: {k: v for k, v in d.items() if k != "id"}
+        return {
+            "portfolio": strip(pf.to_dict()),
+            "positions": [strip(p.to_dict()) for p in positions],
+            "trade_history": [strip(h.to_dict()) for h in history],
+        }
+
+    def replace_account(self, account_type: str, data: dict) -> dict:
+        """계좌의 보유·체결을 모두 지우고 data로 재구성합니다(전체 교체). 반영 건수를 반환."""
+        self.session.query(PaperPosition).filter(PaperPosition.account_type == account_type).delete()
+        self.session.query(PaperTradeHistory).filter(PaperTradeHistory.account_type == account_type).delete()
+
+        pf = self.get_or_create_portfolio(account_type)
+        p = data.get("portfolio", {}) or {}
+        pf.initial_balance = float(p.get("initial_balance", 10000000.0))
+        pf.cash_balance = float(p.get("cash_balance", pf.initial_balance))
+        pf.total_asset_value = float(p.get("total_asset_value", pf.cash_balance))
+        pf.updated_at = datetime.now()
+
+        for row in data.get("positions", []) or []:
+            qty = int(row["quantity"])
+            price = float(row["buy_price"])
+            self.session.add(PaperPosition(
+                account_type=account_type, stock_code=str(row["stock_code"]),
+                stock_name=str(row.get("stock_name") or row["stock_code"]),
+                buy_date=str(row.get("buy_date", "")), buy_price=price, quantity=qty,
+                total_amount=float(row.get("total_amount", price * qty)),
+            ))
+        for row in data.get("trade_history", []) or []:
+            self.session.add(PaperTradeHistory(
+                account_type=account_type, trade_date=str(row.get("trade_date", "")),
+                trade_type=str(row.get("trade_type", "")), stock_code=str(row.get("stock_code", "")),
+                stock_name=str(row.get("stock_name", "")), price=float(row.get("price", 0) or 0),
+                quantity=int(row.get("quantity", 0) or 0), total_amount=float(row.get("total_amount", 0) or 0),
+                realized_pnl=float(row.get("realized_pnl", 0) or 0),
+            ))
+        self.session.commit()
+        return {
+            "portfolios": 1,
+            "positions": len(data.get("positions", []) or []),
+            "trade_history": len(data.get("trade_history", []) or []),
+        }
+
     def add_trade_history(
         self,
         account_type: str,

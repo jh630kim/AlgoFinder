@@ -142,6 +142,14 @@ def _dash(ymd: str) -> str:
     return f"{ymd[:4]}-{ymd[4:6]}-{ymd[6:8]}" if ymd and len(ymd) == 8 and ymd.isdigit() else ymd
 
 
+def _paper_session(account_type: str):
+    """paper_* 테이블 작업용 세션을 계좌유형별로 연다(전용 엔진 없으면 메인과 동일).
+
+    시세·마스터 조회는 항상 메인 세션(`db_manager.get_session()`)을 별도로 쓴다.
+    """
+    return next(db_manager.get_paper_session(account_type))
+
+
 def _close_on_or_before(session, code: str, ymd: str):
     """종목의 기준일(YYYYMMDD) 이하 최근 거래일 종가와 그 거래일을 반환합니다.
 
@@ -250,6 +258,7 @@ def backtest_leaderboard():
 
 
 MAX_SLOTS = 5  # 투자제안/모의투자 포트폴리오 최대 보유 종목 수
+PAPER_EXPORT_SCHEMA = 1  # 가상매매 JSON 내보내기/불러오기 스키마 버전
 
 
 @paper_api_bp.route("/paper-trading/portfolio", methods=["GET"])
@@ -262,9 +271,10 @@ def get_portfolio():
     account_type = request.args.get("account_type", "rec").strip()
     target_date_raw = request.args.get("target_date", "").strip()
     mode = "sim" if request.args.get("mode") == "sim" else "advice"
-    session = next(db_manager.get_session())
+    session = next(db_manager.get_session())          # 시세·지표·코스피용(메인)
+    psession = _paper_session(account_type)           # 자산·보유용(계좌유형별)
     try:
-        repo = PaperTradingRepository(session)
+        repo = PaperTradingRepository(psession)
         pf = repo.get_or_create_portfolio(account_type=account_type)
         pos_dicts = [p.to_dict() for p in repo.get_positions(account_type=account_type)]
 
@@ -306,6 +316,7 @@ def get_portfolio():
         })
     finally:
         session.close()
+        psession.close()
 
 
 @paper_api_bp.route("/paper-trading/reset", methods=["POST"])
@@ -315,9 +326,9 @@ def reset_portfolio():
     account_type = req_data.get("account_type", "rec").strip()
     initial_balance = float(req_data.get("initial_balance", 10000000.0))
 
-    session = next(db_manager.get_session())
+    psession = _paper_session(account_type)
     try:
-        repo = PaperTradingRepository(session)
+        repo = PaperTradingRepository(psession)
         pf = repo.reset_portfolio(account_type=account_type, initial_balance=initial_balance)
         return jsonify({
             "status": "success",
@@ -325,7 +336,7 @@ def reset_portfolio():
             "portfolio": pf.to_dict()
         })
     finally:
-        session.close()
+        psession.close()
 
 
 @paper_api_bp.route("/paper-trading/manual-buy", methods=["POST"])
@@ -346,9 +357,10 @@ def manual_buy():
     if not code:
         return jsonify({"status": "error", "message": "종목코드를 입력해 주세요."}), 400
 
-    session = next(db_manager.get_session())
+    session = next(db_manager.get_session())          # 시세·마스터용(메인)
+    psession = _paper_session(account_type)           # 자산·보유용(계좌유형별)
     try:
-        repo = PaperTradingRepository(session)
+        repo = PaperTradingRepository(psession)
         pf = repo.get_or_create_portfolio(account_type=account_type)
         positions = repo.get_positions(account_type=account_type)
 
@@ -387,7 +399,7 @@ def manual_buy():
         pf.cash_balance -= total_cost
         repo.add_position(account_type, code, stock_name, buy_date, price, qty)
         repo.add_trade_history(account_type, buy_date, "MANUAL_BUY", code, stock_name, price, qty)
-        session.commit()
+        psession.commit()
 
         return jsonify({
             "status": "success",
@@ -396,6 +408,7 @@ def manual_buy():
         })
     finally:
         session.close()
+        psession.close()
 
 
 @paper_api_bp.route("/paper-trading/sell", methods=["POST"])
@@ -414,9 +427,10 @@ def sell_position():
     if not code or qty <= 0:
         return jsonify({"status": "error", "message": "올바른 종목코드와 수량을 입력해 주세요."}), 400
 
-    session = next(db_manager.get_session())
+    session = next(db_manager.get_session())          # 시세용(메인)
+    psession = _paper_session(account_type)           # 자산·보유용(계좌유형별)
     try:
-        repo = PaperTradingRepository(session)
+        repo = PaperTradingRepository(psession)
         pf = repo.get_or_create_portfolio(account_type=account_type)
         position = repo.get_position(account_type, code)
 
@@ -444,7 +458,7 @@ def sell_position():
         pf.cash_balance += proceeds
         repo.reduce_position(position, qty)
         repo.add_trade_history(account_type, sell_date, "SELL", code, stock_name, price, qty, realized_pnl)
-        session.commit()
+        psession.commit()
 
         return jsonify({
             "status": "success",
@@ -455,6 +469,7 @@ def sell_position():
         })
     finally:
         session.close()
+        psession.close()
 
 
 @paper_api_bp.route("/proposal/notify-recommendations", methods=["POST"])
@@ -466,7 +481,8 @@ def notify_recommendations():
     """
     req = request.get_json(silent=True) or {}
     target_date = _ymd(req.get("target_date"))
-    session = next(db_manager.get_session())
+    session = next(db_manager.get_session())          # 시세·지표용(메인)
+    psession = _paper_session("prop")                 # prop 보유 종목용
     try:
         from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
         from backend.app.services.proposal_notify_builder import ProposalNotifyBuilder
@@ -475,7 +491,7 @@ def notify_recommendations():
         # 투자제안(advice) 모드 — /api/recommended-stocks / portfolio 와 동일 소스
         adv = ProposalAdvisorCache.get(session, target_date, "advice")
         rec = adv.get_recommendations(target_date)
-        pos_dicts = [p.to_dict() for p in PaperTradingRepository(session).get_positions(account_type="prop")]
+        pos_dicts = [p.to_dict() for p in PaperTradingRepository(psession).get_positions(account_type="prop")]
         view = adv.build_portfolio_view(pos_dicts, target_date)
 
         message, buy_n, sell_n = ProposalNotifyBuilder().build(
@@ -488,3 +504,46 @@ def notify_recommendations():
         return jsonify({"status": "success", "buy_count": buy_n, "sell_count": sell_n})
     finally:
         session.close()
+        psession.close()
+
+
+@paper_api_bp.route("/paper-trading/export", methods=["GET"])
+def export_paper_account():
+    """가상매매 계좌(계좌·보유·체결)를 스키마 버전 포함 단일 JSON으로 반환합니다(백업/이동용)."""
+    account_type = request.args.get("account_type", "prop").strip()
+    psession = _paper_session(account_type)
+    try:
+        data = PaperTradingRepository(psession).export_account(account_type)
+        return jsonify({
+            "schema_version": PAPER_EXPORT_SCHEMA,
+            "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "account_type": account_type,
+            **data,
+        })
+    finally:
+        psession.close()
+
+
+@paper_api_bp.route("/paper-trading/import", methods=["POST"])
+def import_paper_account():
+    """업로드된 JSON으로 가상매매 계좌를 전체 교체하고, 교체 직전 상태를 backup으로 함께 반환합니다."""
+    payload = request.get_json(silent=True) or {}
+    account_type = (payload.get("account_type") or request.args.get("account_type") or "prop").strip()
+
+    if int(payload.get("schema_version", 0) or 0) != PAPER_EXPORT_SCHEMA:
+        return jsonify({"status": "error", "message": f"스키마 버전이 맞지 않습니다(기대값 {PAPER_EXPORT_SCHEMA})."}), 400
+    if not isinstance(payload.get("portfolio"), dict) or not isinstance(payload.get("positions"), list):
+        return jsonify({"status": "error", "message": "portfolio(dict)/positions(list) 필드가 올바르지 않습니다."}), 400
+
+    psession = _paper_session(account_type)
+    try:
+        repo = PaperTradingRepository(psession)
+        backup = repo.export_account(account_type)  # 교체 전 스냅샷(자동 백업용)
+        imported = repo.replace_account(account_type, payload)
+        return jsonify({
+            "status": "success",
+            "imported": imported,
+            "backup": {"schema_version": PAPER_EXPORT_SCHEMA, "account_type": account_type, **backup},
+        })
+    finally:
+        psession.close()

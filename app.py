@@ -11,7 +11,7 @@ AlgoFinder Flask 웹 백엔드 메인 애플리케이션 (app.py).
 
 import os
 import sys
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from dotenv import load_dotenv
 
 # 콘솔 인코딩 방어: 로그 리다이렉트/서비스 실행 환경에서 표준 출력이 cp949로
@@ -36,10 +36,15 @@ def safe_print(message: str) -> None:
 # .env 환경 변수 로드
 load_dotenv()
 
+from backend.app.core.config import settings
 from backend.app.core.database import db_manager
 from backend.app.api import api_bp, paper_api_bp
 from backend.app.repositories.web_repository import WebRepository
 from backend.app.repositories.market_indices_repository import MarketIndicesRepository
+
+# 실행 프로필 / 읽기 전용 모드
+WEB_PROFILE = settings.APP_PROFILE.lower() == "web"   # web: 투자제안 모바일만 노출
+READONLY = bool(settings.READONLY)                     # True: 시세 동기화(쓰기)만 차단
 
 # Flask 앱 생성 및 템플릿/스태틱 디렉토리 설정
 app = Flask(
@@ -54,6 +59,22 @@ db_manager.create_all_tables()
 # API 블루프린트 등록
 app.register_blueprint(api_bp)
 app.register_blueprint(paper_api_bp)
+
+# web 프로필: PC 전용 페이지는 투자제안 모바일로 리다이렉트
+_WEB_REDIRECT_PAGES = {"/", "/backtest", "/recommendation", "/proposal"}
+# READONLY: 시세 쓰기 경로만 차단(가상매매 paper 쓰기는 영향 없음)
+_READONLY_BLOCKED_PREFIXES = ("/api/sync",)
+
+
+@app.before_request
+def _profile_readonly_gate():
+    """실행 프로필·읽기전용 규칙에 따라 요청을 사전 차단/리다이렉트합니다."""
+    path = "/" + request.path.strip("/")
+    if WEB_PROFILE and path in _WEB_REDIRECT_PAGES:
+        return redirect(url_for("proposal_mobile"))
+    if READONLY and path.startswith(_READONLY_BLOCKED_PREFIXES):
+        return jsonify({"status": "error", "message": "읽기 전용 모드입니다(시세 동기화 비활성)."}), 403
+    return None
 
 
 def _latest_trading_date() -> str:
@@ -110,7 +131,7 @@ def is_mobile_user_agent(user_agent_str: str) -> bool:
 @app.route("/")
 def index():
     """메인 대시보드 페이지 라우트."""
-    return render_template("index.html")
+    return render_template("index.html", readonly=READONLY)
 
 
 @app.route("/backtest")

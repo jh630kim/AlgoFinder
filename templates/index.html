@@ -31,7 +31,9 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <span class="summary-chip" style="color: #34d399;">📅 최근 동기화: <strong id="statLastSyncTime">-</strong></span>
+                    {% if not readonly %}
                     <button class="sidebar-btn" id="btnManualSync" style="background: linear-gradient(135deg, #0284c7, #0369a1); cursor: pointer;">🔄 수급 동기화</button>
+                    {% endif %}
                 </div>
             </header>
 

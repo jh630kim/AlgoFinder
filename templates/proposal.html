@@ -46,6 +46,9 @@
                     <h3 style="margin: 0; color: #fbbf24; font-size: 18px; font-weight: 800;">💰 자산 (포트폴리오 검증 시뮬레이터)</h3>
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <span id="kospiRegimeBadge" data-regime="{{ kospi_regime.regime if kospi_regime else '' }}" style="font-size: 12px; color: #cbd5e1; background: rgba(15,23,42,0.8); padding: 4px 12px; border-radius: 12px; border: 1px solid rgba(251,191,36,0.3); white-space: nowrap;">{{ kospi_regime.text if kospi_regime else '📊 코스피 20일선: -' }}</span>
+                        <button id="btnExportPaper" style="background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">⬇️ 내보내기</button>
+                        <button id="btnImportPaper" style="background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">⬆️ 불러오기</button>
+                        <input type="file" id="importPaperFile" accept="application/json,.json" style="display:none;">
                         <button id="btnResetPortfolio" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; padding: 6px 14px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">🔄 자산 초기화 (1,000만원)</button>
                     </div>
                 </div>

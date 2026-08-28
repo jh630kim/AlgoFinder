@@ -21,10 +21,19 @@ class Settings(BaseSettings):
     """
     APP_NAME: str = "AlgoFinder"
     ENV: str = "development"
-    
+
+    # 실행 프로필 및 배포 모드
+    # APP_PROFILE: "full"(로컬, 전체 화면) | "web"(Koyeb, 투자제안 모바일만)
+    APP_PROFILE: str = "full"
+    # READONLY: True 면 시세 쓰기(수급 동기화)만 차단. 가상매매(paper) 쓰기는 영향 없음
+    READONLY: bool = False
+
     # 데이터베이스 접속 설정 (기본값: SQLite 로컬 DB)
     DATABASE_URL: str = "sqlite:///./data/app.db"
-    
+    # 투자제안 가상매매(account_type='prop') 전용 저장소(Turso/libSQL 등).
+    # 비어 있으면 'prop'도 로컬 DATABASE_URL 로 폴백한다.
+    PAPER_DATABASE_URL: str = ""
+
     # 외부 시스템 및 디스코드 웹훅 설정
     DISCORD_WEBHOOK_URL: str = ""
     SPARK_API_SECRET_KEY: str = ""
