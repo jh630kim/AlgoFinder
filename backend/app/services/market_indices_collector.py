@@ -9,7 +9,6 @@ from typing import List, Dict, Any
 import logging
 from datetime import datetime, timedelta
 import pandas as pd
-import FinanceDataReader as fdr
 from sqlalchemy.orm import Session
 from backend.app.repositories.market_indices_repository import MarketIndicesRepository
 
@@ -40,6 +39,9 @@ class MarketIndicesCollector:
         :param end_date: 종료일자 (YYYYMMDD)
         :return: 일자별 지수/환율 딕셔너리 리스트
         """
+        # FinanceDataReader 는 웹 서빙(requirements-web) 대상이 아니라 지연 import 한다.
+        import FinanceDataReader as fdr
+
         try:
             kospi_df = fdr.DataReader("KS11", start_date, end_date)
             kosdaq_df = fdr.DataReader("KQ11", start_date, end_date)

@@ -9,7 +9,6 @@ from typing import List, Dict, Any, Set
 from datetime import datetime, timedelta
 import logging
 from sqlalchemy.orm import Session
-import FinanceDataReader as fdr
 from backend.app.repositories.stock_master_repository import StockMasterRepository
 from backend.app.repositories.target_stocks_repository import TargetStocksRepository
 
@@ -38,6 +37,9 @@ class StockMasterCollector:
         :param market_code: 시장 코드 ('KRX' 등)
         :return: 정제된 종목 딕셔너리 리스트 (총 4,000개 이상)
         """
+        # FinanceDataReader 는 웹 서빙(requirements-web) 대상이 아니라 지연 import 한다.
+        import FinanceDataReader as fdr
+
         items: List[Dict[str, Any]] = []
         code_set: Set[str] = set()
 
