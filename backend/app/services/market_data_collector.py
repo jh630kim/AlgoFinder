@@ -251,7 +251,7 @@ class MarketDataCollector:
 
     def collect_target_market_data(
         self, start_date: str = None, end_date: str = None, incremental: bool = True,
-        progress_callback=None
+        progress_callback=None, ohlcv_only: bool = False
     ) -> Dict[str, Any]:
         """
         모든 타깃 종목에 대해 수급/OHLCV 데이터를 스마트 증분(Incremental) 또는 전체(Full) 모드로 수집합니다.
@@ -260,6 +260,8 @@ class MarketDataCollector:
         :param end_date: 종료일자 (YYYYMMDD, None시 오늘)
         :param incremental: 증분 수집 여부 (True: 미수집 신규 일자만, False: 전체 덮어쓰기)
         :param progress_callback: 진행 상황 콜백 (done:int, total:int, msg:str) — None시 미호출
+        :param ohlcv_only: True면 네이버/KRX 수급 스크래핑 없이 FDR로 OHLCV만 수집(수급 컬럼 NULL).
+                           CI(GitHub Actions)처럼 KRX·네이버 접근이 막힌 환경용.
         :return: 수집 결과 요약 딕셔너리
         """
         start_time = time.time()
@@ -298,14 +300,19 @@ class MarketDataCollector:
                     else:
                         target_start = next_day_str
 
-            items = self.fetch_trading_data_with_retry(sym, target_start, actual_end)
+            # ohlcv_only: 네이버/KRX 수급 스크래핑을 건너뛰고 FDR OHLCV 폴백을 정식 경로로 사용
+            if ohlcv_only:
+                items = self._fetch_fdr_fallback(sym, target_start, actual_end, "OHLCV 전용 수집(수급 스크래핑 생략)")
+            else:
+                items = self.fetch_trading_data_with_retry(sym, target_start, actual_end)
             saved = 0
             if items:
                 saved = self.market_repo.bulk_upsert(items)
                 total_records += saved
 
             logger.info(f"  ├─ [{idx:3d}/{total_symbols:3d}] ({pct:5.1f}%) {sym} {stock_name} 수집 완료 ({target_start}~{actual_end}, {saved}건 적재)")
-            time.sleep(0.5)  # KRX 서버 호출 제한(Rate Limit) 방지 0.5초 여유 딜레이
+            if not ohlcv_only:
+                time.sleep(0.5)  # KRX 서버 호출 제한(Rate Limit) 방지 0.5초 여유 딜레이
 
         # 총 소요시간 측정 및 가독형 표현 계산
         elapsed_sec = round(time.time() - start_time, 2)

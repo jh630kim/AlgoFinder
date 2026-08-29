@@ -40,13 +40,17 @@ def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str 
     1단계~3단계 통합 데이터 수집 파이프라인을 지정된 모드 및 단계별로 선택 실행합니다.
 
     :param mode: 수집 모드 ('incremental': 미수집 신규 일자만 스마트 수집, 'full': 전체 기간 덮어쓰기)
-    :param stage: 수집 단계 선택 ('all': 전체 1~3단계, '1': 1단계 마스터, '2': 2단계 지수/환율, '3': 3단계 타깃 수급/OHLCV)
+    :param stage: 수집 단계 선택 ('all': 전체 1~3단계, '1': 1단계 마스터, '2': 2단계 지수/환율,
+                  '3': 3단계 타깃 수급/OHLCV, 'ohlcv-only': 1단계 생략 + 2단계 + 3단계를 FDR OHLCV만(수급 NULL).
+                  CI(GitHub Actions)처럼 KRX·네이버가 막힌 환경용)
     :param start_date: 수집 시작일자 (YYYYMMDD, 미지정 시 20050101부터)
     :param end_date: 수집 종료일자 (YYYYMMDD, 미지정 시 오늘까지)
     :param session: SQLAlchemy 세션 객체 (미지정 시 기본 DB 세션 사용)
     """
     is_incremental = (mode.lower() == "incremental")
     stage_str = str(stage).lower()
+    # ohlcv-only: Stage 1 미실행, Stage 2 + (수급 없는) Stage 3만. 나머지 분기 판정에 쓸 플래그.
+    ohlcv_only = (stage_str == "ohlcv-only")
     today_dt = datetime.now()
     if not end_date:
         end_date = today_dt.strftime("%Y%m%d")
@@ -67,7 +71,7 @@ def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str 
         # ----------------------------------------------------
         # 1단계: 종목 마스터 및 타깃 종목 목록 동기화
         # ----------------------------------------------------
-        if stage_str in ["all", "1"]:
+        if stage_str in ["all", "1"]:  # ohlcv-only는 Stage 1(마스터/타깃 목록) 미실행 — PC 업로드분 유지
             logger.info("\n[1단계] 종목 마스터 & 타깃 종목 수집 시작...")
             master_collector = StockMasterCollector(session)
             stage1_res = master_collector.run_sync()
@@ -79,7 +83,7 @@ def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str 
         # ----------------------------------------------------
         # 2단계: 주요 지수 및 환율 데이터 적재
         # ----------------------------------------------------
-        if stage_str in ["all", "2"]:
+        if stage_str in ["all", "2", "ohlcv-only"]:
             logger.info(f"\n[2단계] 주요 시장 지수 및 환율(KOSPI, KOSDAQ, S&P500, USD/KRW) 수집 시작 [{mode.upper()} 모드]...")
             indices_collector = MarketIndicesCollector(session)
             stage2_res = indices_collector.collect_market_indices(
@@ -98,13 +102,15 @@ def run_pipeline(mode: str = "incremental", stage: str = "all", start_date: str 
         # ----------------------------------------------------
         # 3단계: 타깃 종목 일별 수급/OHLCV 및 SyncLogs 적재
         # ----------------------------------------------------
-        if stage_str in ["all", "3"]:
-            logger.info(f"\n[3단계] 타깃 종목 일별 수급 및 OHLCV 데이터 수집 시작 [{mode.upper()} 모드]...")
+        if stage_str in ["all", "3", "ohlcv-only"]:
+            _o = " (FDR OHLCV 전용, 수급 NULL)" if ohlcv_only else ""
+            logger.info(f"\n[3단계] 타깃 종목 일별 수급 및 OHLCV 데이터 수집 시작 [{mode.upper()} 모드]{_o}...")
             market_data_collector = MarketDataCollector(session)
             stage3_res = market_data_collector.collect_target_market_data(
                 start_date=start_date,
                 end_date=end_date,
-                incremental=is_incremental
+                incremental=is_incremental,
+                ohlcv_only=ohlcv_only
             )
             logger.info(
                 f"  └─ ✅ [3단계 완료] 타깃 {stage3_res.get('target_symbols_count')}개 종목 중 "
@@ -132,9 +138,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage",
         "-s",
-        choices=["all", "1", "2", "3"],
+        choices=["all", "1", "2", "3", "ohlcv-only"],
         default="all",
-        help="수집 단계 선택 ('all': 전체 1~3단계, '1': 1단계 마스터, '2': 2단계 지수/환율, '3': 3단계 타깃 수급/OHLCV)"
+        help="수집 단계 선택 ('all': 전체 1~3단계, '1': 마스터, '2': 지수/환율, '3': 타깃 수급/OHLCV, "
+             "'ohlcv-only': 1단계 생략 + 2단계 + 3단계 FDR OHLCV만(수급 NULL, CI용))"
     )
     parser.add_argument("--start", default="20050101", help="시작일자 (YYYYMMDD, 기본값: 20050101)")
     parser.add_argument("--end", help="종료일자 (YYYYMMDD)")

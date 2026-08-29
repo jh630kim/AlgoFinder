@@ -10,7 +10,7 @@
 제외: strategy_leaderboard / strategy_trade_logs / strategy_daily_equity / sync_logs
 
 사용법:
-    python deploy/build_lite_db.py [--src data/app.db] [--dst data/app_lite.db] [--days 365]
+    python deploy/build_lite_db.py [--src data/app.db] [--dst data/app_lite.db] [--days 730]
 """
 
 import argparse
@@ -115,6 +115,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default="data/app.db")
     ap.add_argument("--dst", default="data/app_lite.db")
-    ap.add_argument("--days", type=int, default=365)
+    ap.add_argument("--days", type=int, default=730)  # 2년치 (합성 점수 장기 팩터용)
     args = ap.parse_args()
     build(args.src, args.dst, args.days)
