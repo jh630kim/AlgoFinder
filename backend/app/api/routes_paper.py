@@ -101,13 +101,14 @@ def backtest_run():
         StrategyDailyEquityRepository(session).clear_all()
 
         combo_ids = [1, 2, 5, 6, 7, 8]
+        total_steps = len(combo_ids) + 1  # + 순수관행 엔트리
         engine = BacktestEngine(session)
         for i, c_id in enumerate(combo_ids, 1):
             try:
                 engine.run_backtest_for_combo(
                     combo_id=c_id,
                     initial_capital=10000000.0,
-                    max_slots=3,
+                    max_slots=5,  # Phase 2: 전 백테스트 5슬롯 통일
                     start_date=start_date,
                     end_date=end_date,
                     target_sectors=["KOSPI 200", "KOSDAQ 150"]
@@ -115,7 +116,20 @@ def backtest_run():
             except Exception as e:
                 logger.error(f"Combo {c_id} 오류: {e}")
             BACKTEST_PROGRESS["completed"] = i
-            BACKTEST_PROGRESS["message"] = f"전략 조합 {i}/{len(combo_ids)} 연산 완료..."
+            BACKTEST_PROGRESS["message"] = f"전략 조합 {i}/{total_steps} 연산 완료..."
+
+        # 순수관행(횡단면 합성 점수) 엔트리 — combo_id=22
+        try:
+            from backend.app.services.purerule_engine import PureRuleEngine
+            PureRuleEngine(session).run_backtest(
+                initial_capital=10000000.0, max_slots=5,
+                start_date=start_date, end_date=end_date,
+                target_sectors=["KOSPI 200", "KOSDAQ 150"],
+            )
+        except Exception as e:
+            logger.error(f"순수관행 엔트리 오류: {e}")
+        BACKTEST_PROGRESS["completed"] = total_steps
+        BACKTEST_PROGRESS["message"] = f"전략 조합 {total_steps}/{total_steps} 연산 완료..."
 
         # 렌더 payload를 1회 조립해 파일 캐시에 저장 (이후 조회는 재조립 없이 반환)
         from backend.app.services.backtest_leaderboard_builder import BacktestLeaderboardBuilder
@@ -355,6 +369,8 @@ def manual_buy():
     price = float(req_data.get("buy_price", 0) or 0)
     qty = int(req_data.get("quantity", 0) or 0)
     buy_date = req_data.get("buy_date", datetime.now().strftime("%Y-%m-%d"))
+    # 추천 카드에서 매수 시 어느 전략/순수관행이 제안했는지 태그(없으면 MANUAL)
+    entry_strategy = (req_data.get("strategy") or req_data.get("entry_strategy") or "MANUAL").strip()[:20]
 
     if not code:
         return jsonify({"status": "error", "message": "종목코드를 입력해 주세요."}), 400
@@ -399,8 +415,9 @@ def manual_buy():
         stock_name = master.name if master else code
 
         pf.cash_balance -= total_cost
-        repo.add_position(account_type, code, stock_name, buy_date, price, qty)
-        repo.add_trade_history(account_type, buy_date, "MANUAL_BUY", code, stock_name, price, qty)
+        repo.add_position(account_type, code, stock_name, buy_date, price, qty, entry_strategy=entry_strategy)
+        repo.add_trade_history(account_type, buy_date, "MANUAL_BUY", code, stock_name, price, qty,
+                               entry_strategy=entry_strategy)
         psession.commit()
 
         return jsonify({

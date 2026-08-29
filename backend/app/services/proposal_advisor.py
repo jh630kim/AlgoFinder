@@ -72,6 +72,7 @@ class ProposalAdvisor:
         self._signal_date = None
         self._eff_close_map: Dict[str, float] = {}
         self._processed: Dict[str, Any] = {}
+        self._cs_cache = None  # 합성 점수 캐시
         self._market_map: Dict[str, str] = {}
 
     def load(self, target_date: str) -> None:
@@ -97,6 +98,7 @@ class ProposalAdvisor:
         win_end = (td + timedelta(days=FORWARD_CAL_DAYS)).strftime("%Y%m%d")
 
         self._processed = {}
+        self._cs_cache = None
         self._resolved_for = None
         self._eff_date = None
         self._signal_date = None
@@ -139,6 +141,20 @@ class ProposalAdvisor:
             self._processed[key] = STRATEGY_MAP[key].calculate_indicators(self._df)
         return self._processed[key]
 
+    def _composite_map(self) -> Dict[str, Any]:
+        """로드된 창에 대해 순수관행 합성 점수를 1회 계산해 (symbol,date)->(pct,rank) 로 반환."""
+        if getattr(self, "_cs_cache", None) is None:
+            import pandas as pd
+            from backend.app.services.composite_score import CompositeScorer
+            scored = CompositeScorer().score(self._df)
+            m = {}
+            for r in scored.itertuples(index=False):
+                pct = None if pd.isna(r.composite_pct) else round(float(r.composite_pct), 1)
+                rk = None if pd.isna(r.composite_rank) else int(r.composite_rank)
+                m[(r.symbol, r.date)] = (pct, rk)
+            self._cs_cache = m
+        return self._cs_cache
+
     def _sell_rows_for(self, key: str, held: set):
         """보유 종목의 신호일 매도 신호 행을 반환합니다(연산량 축소).
 
@@ -168,29 +184,42 @@ class ProposalAdvisor:
             return {"target_date": target_date, "eval_date": self._eff_date,
                     "signal_date": self._signal_date, "data": []}
 
+        cmap = self._composite_map()
         out = []
         for key in STRATEGY_MAP:
             pdf = self._processed_df(key)
             # 매수 신호는 판단 기준일(sim이면 D-1)에서 포착
             day = pdf[(pdf["date"] == self._signal_date) & (pdf["signal_buy"].fillna(False))]
-            day = day.sort_values("prob_up", ascending=False).head(top_n)
             for _, r in day.iterrows():
                 sym = r["symbol"]
                 # 추천가는 체결·평가 기준일(D-0) 종가. advice 모드는 신호행과 동일 값
                 px = float(self._eff_close_map.get(sym, r["close_price"]))
+                cs_pct, cs_rank = cmap.get((sym, self._signal_date), (None, None))
                 out.append({
                     "code": sym,
                     "name": str(r.get("name") or sym),
                     "market": self._market_map.get(sym, ""),
                     "strategy": key,
                     "strategy_name": STRATEGY_LABELS.get(key, key),
-                    "prob_up": round(float(r.get("prob_up", 50.0)), 1),
+                    # prob_up 필드는 합성 백분위로 대체(없으면 기존 prob_up)
+                    "prob_up": cs_pct if cs_pct is not None else round(float(r.get("prob_up", 50.0)), 1),
+                    "composite_pct": cs_pct,
+                    "composite_rank": cs_rank,
                     "close_price": int(round(px)),
                     "reason": STRATEGY_BUY_REASON.get(key, "매수 신호 포착"),
                 })
-        out.sort(key=lambda x: x["prob_up"], reverse=True)
+        # 합성 점수(백분위) 내림차순 정렬 → 전략별 top_n 제한
+        out.sort(key=lambda x: (x["prob_up"] if x["prob_up"] is not None else -1), reverse=True)
+        seen: Dict[str, int] = {}
+        limited = []
+        for row in out:
+            k = row["strategy"]
+            if seen.get(k, 0) >= top_n:
+                continue
+            seen[k] = seen.get(k, 0) + 1
+            limited.append(row)
         return {"target_date": target_date, "eval_date": self._eff_date,
-                "signal_date": self._signal_date, "data": out}
+                "signal_date": self._signal_date, "data": limited}
 
     def build_portfolio_view(self, positions: List[Dict[str, Any]], target_date: str) -> Dict[str, Any]:
         """보유 종목을 기준일 종가로 평가하고 매도 신호를 판정한 결과를 반환합니다.
@@ -206,6 +235,7 @@ class ProposalAdvisor:
             close_map = dict(zip(day["symbol"], day["close_price"]))
 
         held = {p["stock_code"] for p in positions}
+        cmap = self._composite_map() if (self._df is not None and not self._df.empty) else {}
         strat_sells: Dict[str, List[str]] = {}
         if self._eff_date and self._signal_date and held:
             for key in STRATEGY_MAP:
@@ -237,10 +267,13 @@ class ProposalAdvisor:
                 badges.append("🎯 익절선 +10%")
                 reasons.append(f"매수가 대비 +{pnl_pct:.2f}% 상승 (수익 확정)")
             if badges:
+                cs_pct, cs_rank = cmap.get((code, self._eff_date), (None, None))
                 signals.append({
                     "code": code, "name": p.get("stock_name", code), "quantity": qty,
                     "buy_price": int(round(buy)), "current_price": int(round(cur)),
                     "badges": badges, "reason": " / ".join(reasons),
+                    "entry_strategy": p.get("entry_strategy"),
+                    "composite_pct": cs_pct, "composite_rank": cs_rank,
                 })
 
         return {

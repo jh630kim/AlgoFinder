@@ -117,6 +117,12 @@ class DatabaseManager:
                     conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN account_type VARCHAR(20) DEFAULT 'rec'"))
                 except Exception:
                     pass  # 이미 컬럼이 존재하는 경우 예외 무시
+            # 개시 전략 태그(어느 전략/순수관행으로 매수했는지) — Phase 2
+            for tbl in ["paper_positions", "paper_trade_histories"]:
+                try:
+                    conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN entry_strategy VARCHAR(20)"))
+                except Exception:
+                    pass
 
     def get_session(self) -> Generator[Session, None, None]:
         """

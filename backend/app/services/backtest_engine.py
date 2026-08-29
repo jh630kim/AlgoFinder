@@ -70,6 +70,7 @@ class BacktestEngine:
         self._cached_sectors = None
         self._indicator_cache = {}   # strat_key -> 지표 연산 완료 DataFrame
         self._dict_map_cache = {}    # strat_key -> {(symbol, date): row_dict}
+        self._composite_map_cache = None  # {(symbol, date): (composite_score, composite_pct)}
 
     def load_market_dataframe(
         self, target_sectors: List[str], start_date: str = None, end_date: str = None,
@@ -120,11 +121,12 @@ class BacktestEngine:
             return pd.DataFrame()
         df = df.sort_values(by=["symbol", "date"]).reset_index(drop=True)
 
-        # 로딩 데이터 범위가 바뀌면 전략별 지표/딕셔너리 캐시를 무효화
+        # 로딩 데이터 범위가 바뀌면 전략별 지표/딕셔너리/합성점수 캐시를 무효화
         self._df_cache = df
         self._cached_sectors = cache_key
         self._indicator_cache = {}
         self._dict_map_cache = {}
+        self._composite_map_cache = None
         return df
 
     def _get_processed_df(self, strat_key: str, df_raw: pd.DataFrame) -> pd.DataFrame:
@@ -148,6 +150,22 @@ class BacktestEngine:
         if strat_key not in self._dict_map_cache:
             self._dict_map_cache[strat_key] = processed_df.set_index(["symbol", "date"]).to_dict("index")
         return self._dict_map_cache[strat_key]
+
+    def _get_composite_map(self, df_raw: pd.DataFrame) -> Dict[Any, Any]:
+        """순수관행 합성 점수 (symbol, date) -> (score, pct) 룩업 맵을 캐싱합니다.
+
+        S1~S5 매수 후보를 슬롯에 넣을 때의 정렬 키로 쓴다(prob_up 대체).
+        :param df_raw: load_market_dataframe 원천 데이터프레임
+        :return: {(symbol, date): (composite_score, composite_pct)}
+        """
+        if getattr(self, "_composite_map_cache", None) is None:
+            from backend.app.services.composite_score import CompositeScorer
+            scored = CompositeScorer().score(df_raw)
+            self._composite_map_cache = {
+                (r.symbol, r.date): (float(r.composite_score), float(r.composite_pct or 0.0))
+                for r in scored.itertuples(index=False)
+            }
+        return self._composite_map_cache
 
     def run_backtest_for_combo(
         self, combo_id: int, initial_capital: float = 3000000.0, max_slots: int = 3,
@@ -173,8 +191,10 @@ class BacktestEngine:
             return self._empty_result(combo_id, combo_name, initial_capital)
 
         processed_dfs = [self._get_processed_df(k, df_raw) for k in strat_keys]
+        composite_map = self._get_composite_map(df_raw)  # 매수 후보 정렬 키(합성 점수)
         metrics, logs, equity_logs = self._simulate_trading(
-            combo_id, processed_dfs, strat_keys, initial_capital, max_slots, start_date, end_date
+            combo_id, processed_dfs, strat_keys, initial_capital, max_slots,
+            start_date, end_date, composite_map
         )
 
         self.leaderboard_repo.upsert_leaderboard_entry({
@@ -216,9 +236,15 @@ class BacktestEngine:
 
     def _simulate_trading(
         self, combo_id: int, dfs: List[pd.DataFrame], strat_keys: List[str],
-        initial_capital: float, max_slots: int, start_date: str, end_date: str
+        initial_capital: float, max_slots: int, start_date: str, end_date: str,
+        composite_map: Dict[Any, Any] = None
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """D-1 신호 포착 ➔ D-0 종가 체결 시뮬레이션을 딕셔너리 고속 룩업으로 연산합니다."""
+        """D-1 신호 포착 ➔ D-0 종가 체결 시뮬레이션을 딕셔너리 고속 룩업으로 연산합니다.
+
+        매수 후보는 순수관행 합성 점수(composite_map) 내림차순으로 빈 슬롯에 채운다.
+        합성 점수가 없으면 prob_up 으로 폴백. 매매일지 prob_up 필드에는 합성 백분위를 기록.
+        """
+        cmap = composite_map or {}
         dates = sorted(dfs[0]["date"].unique())
         sim_dates = [d for d in dates if start_date <= d <= end_date]
         if not sim_dates:
@@ -302,7 +328,7 @@ class BacktestEngine:
             for sym in symbols_to_sell:
                 del positions[sym]
 
-            # 2. 신규 포지션 매수 판정 (D-1 신호 기준 prob_up 정렬, D-0 종가 체결)
+            # 2. 신규 포지션 매수 판정 (D-1 신호 포착, 합성 점수 내림차순 정렬, D-0 종가 체결)
             open_slots = max_slots - len(positions)
             if open_slots > 0:
                 buy_candidates = []
@@ -320,10 +346,16 @@ class BacktestEngine:
                             name_val = str(r_prev.get("name", sym))
                             break
                     if buy_signaled:
-                        buy_candidates.append({"symbol": sym, "prob_up": prob_val, "name": name_val})
+                        cs, cpct = cmap.get((sym, prev_d), (None, None))
+                        # 정렬 키: 합성 점수 우선, 없으면 prob_up. 매매일지엔 합성 백분위 기록.
+                        rank_key = cs if cs is not None else prob_val
+                        rec_prob = cpct if cpct is not None else prob_val
+                        buy_candidates.append({
+                            "symbol": sym, "prob_up": rec_prob, "rank_key": rank_key, "name": name_val,
+                        })
 
                 if buy_candidates:
-                    buy_candidates.sort(key=lambda x: x["prob_up"], reverse=True)
+                    buy_candidates.sort(key=lambda x: x["rank_key"], reverse=True)
                     selected_buys = buy_candidates[:open_slots]
 
                     for b_item in selected_buys:

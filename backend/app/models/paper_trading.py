@@ -49,6 +49,7 @@ class PaperPosition(Base):
     buy_price = Column(Float, nullable=False, comment="매수가 (당일 종가)")
     quantity = Column(Integer, nullable=False, comment="보유 수량")
     total_amount = Column(Float, nullable=False, comment="총 투입 금액 (원)")
+    entry_strategy = Column(String(20), nullable=True, comment="개시 전략 태그 (S1~S5 / 순수관행 / MANUAL)")
     created_at = Column(DateTime, default=datetime.now, comment="생성 일시")
 
     def to_dict(self) -> dict:
@@ -62,6 +63,7 @@ class PaperPosition(Base):
             "buy_price": self.buy_price,
             "quantity": self.quantity,
             "total_amount": self.total_amount,
+            "entry_strategy": self.entry_strategy,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
         }
 
@@ -82,6 +84,7 @@ class PaperTradeHistory(Base):
     quantity = Column(Integer, nullable=False, comment="체결 수량")
     total_amount = Column(Float, nullable=False, comment="총 체결 금액")
     realized_pnl = Column(Float, default=0.0, comment="실현 손익금 (원)")
+    entry_strategy = Column(String(20), nullable=True, comment="개시 전략 태그 (매수행)")
     created_at = Column(DateTime, default=datetime.now, comment="생성 일시")
 
     def to_dict(self) -> dict:
@@ -97,5 +100,6 @@ class PaperTradeHistory(Base):
             "quantity": self.quantity,
             "total_amount": self.total_amount,
             "realized_pnl": self.realized_pnl,
+            "entry_strategy": self.entry_strategy,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
         }

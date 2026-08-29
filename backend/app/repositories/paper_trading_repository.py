@@ -58,13 +58,16 @@ class PaperTradingRepository:
 
     def add_position(
         self, account_type: str, stock_code: str, stock_name: str,
-        buy_date: str, buy_price: float, quantity: int
+        buy_date: str, buy_price: float, quantity: int, entry_strategy: str = None
     ) -> PaperPosition:
-        """지정된 계좌 유형에 신규 보유 잔고를 생성합니다."""
+        """지정된 계좌 유형에 신규 보유 잔고를 생성합니다.
+
+        :param entry_strategy: 개시 전략 태그(S1~S5 / 순수관행 / MANUAL). 매도뷰 표시용.
+        """
         position = PaperPosition(
             account_type=account_type, stock_code=stock_code, stock_name=stock_name,
             buy_date=buy_date, buy_price=float(buy_price), quantity=int(quantity),
-            total_amount=float(buy_price) * int(quantity)
+            total_amount=float(buy_price) * int(quantity), entry_strategy=entry_strategy
         )
         self.session.add(position)
         self.session.commit()
@@ -142,7 +145,8 @@ class PaperTradingRepository:
         stock_name: str,
         price: float,
         quantity: int,
-        realized_pnl: float = 0.0
+        realized_pnl: float = 0.0,
+        entry_strategy: str = None
     ) -> PaperTradeHistory:
         """지정된 계좌 유형의 가상 체결 이력 로그를 저장합니다."""
         history = PaperTradeHistory(
@@ -155,6 +159,7 @@ class PaperTradingRepository:
             quantity=quantity,
             total_amount=price * quantity,
             realized_pnl=realized_pnl,
+            entry_strategy=entry_strategy,
             created_at=datetime.now()
         )
         self.session.add(history)
