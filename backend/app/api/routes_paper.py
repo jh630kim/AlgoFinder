@@ -547,3 +547,47 @@ def import_paper_account():
         })
     finally:
         psession.close()
+
+
+@paper_api_bp.route("/paper-trading/sync-turso", methods=["POST"])
+def sync_turso():
+    """로컬 prop 계좌를 Turso와 한 번에 동기화한다(direction=push|pull, prop 전용).
+
+    push: 로컬(app.db) → Turso 전체 교체 / pull: Turso → 로컬 전체 교체.
+    교체되는 쪽의 직전 상태를 backup으로 함께 반환한다.
+    앱이 이미 Turso 드라이버로 직접 연결된 경우(배포 환경)에는 동기화가 불필요하다.
+    """
+    from backend.app.services.turso_http_client import TursoHttpClient
+
+    direction = (request.args.get("direction") or "").strip()
+    if direction not in ("push", "pull"):
+        return jsonify({"status": "error", "message": "direction 은 push 또는 pull 이어야 합니다."}), 400
+    if db_manager.paper_engine is not None:
+        return jsonify({"status": "error", "message": "이미 Turso에 직접 연결돼 있어 동기화가 필요 없습니다."}), 400
+
+    client = TursoHttpClient()
+    if not client.configured:
+        return jsonify({"status": "error", "message": "PAPER_DATABASE_URL(호스트·authToken)이 설정되지 않았습니다(.env 확인)."}), 400
+
+    psession = _paper_session("prop")  # 로컬 메인 DB(app.db)
+    try:
+        repo = PaperTradingRepository(psession)
+        if direction == "push":
+            payload = {"schema_version": PAPER_EXPORT_SCHEMA, **repo.export_account("prop")}
+            backup = client.fetch_account()          # Turso 직전 상태(백업)
+            imported = client.overwrite_account(payload)
+        else:  # pull
+            remote = client.fetch_account()
+            backup = repo.export_account("prop")      # 로컬 직전 상태(백업)
+            imported = repo.replace_account("prop", {"schema_version": PAPER_EXPORT_SCHEMA, **remote})
+        return jsonify({
+            "status": "success",
+            "direction": direction,
+            "imported": imported,
+            "backup": {"schema_version": PAPER_EXPORT_SCHEMA, "account_type": "prop", **backup},
+        })
+    except Exception as exc:  # HTTP·SQL 오류를 사용자 메시지로
+        logging.getLogger(__name__).exception("Turso 동기화 실패")
+        return jsonify({"status": "error", "message": f"Turso 동기화 실패: {exc}"}), 502
+    finally:
+        psession.close()

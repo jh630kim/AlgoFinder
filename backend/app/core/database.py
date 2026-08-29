@@ -60,7 +60,12 @@ class DatabaseManager:
                 connect_args["auth_token"] = token
             # '/' 만 남아 빈 database 인 경우 제거 → 원격 전용 형태로 정규화
             url = url.set(query=query, database=url.database or None)
-            return create_engine(url, connect_args=connect_args)
+            try:
+                return create_engine(url, connect_args=connect_args)
+            except Exception:
+                # 로컬(Windows)은 sqlalchemy-libsql 휠이 없어 드라이버 로드 실패 →
+                # paper 엔진 없이 동작(prop 은 메인 DB 폴백). Turso 동기화는 HTTP 클라이언트가 담당.
+                return None
         if db_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
         return create_engine(db_url, connect_args=connect_args)

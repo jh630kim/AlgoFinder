@@ -49,6 +49,10 @@
                         <button id="btnExportPaper" style="background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">⬇️ 내보내기</button>
                         <button id="btnImportPaper" style="background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid #38bdf8; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">⬆️ 불러오기</button>
                         <input type="file" id="importPaperFile" accept="application/json,.json" style="display:none;">
+                        {% if turso_sync %}
+                        <button id="btnSyncTursoPush" title="로컬 기록을 Turso로 전체 교체" style="background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid #a855f7; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">⬆️ Turso로 보내기</button>
+                        <button id="btnSyncTursoPull" title="Turso 기록으로 로컬을 전체 교체" style="background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid #a855f7; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">⬇️ Turso에서 받기</button>
+                        {% endif %}
                         <button id="btnResetPortfolio" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; padding: 6px 14px; border-radius: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">🔄 자산 초기화 (1,000만원)</button>
                     </div>
                 </div>

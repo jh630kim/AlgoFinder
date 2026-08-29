@@ -65,6 +65,8 @@
         bindClick("btnImportPaper", () => { const f = $("importPaperFile"); if (f) f.click(); });
         const impFile = $("importPaperFile");
         if (impFile) impFile.addEventListener("change", importPaperFromFile);
+        bindClick("btnSyncTursoPush", () => syncTurso("push"));
+        bindClick("btnSyncTursoPull", () => syncTurso("pull"));
         bindClick("btnResetPortfolio", resetPortfolio);
         bindClick("btnOpenManualBuyModal", () => openBuyModal());
         bindClick("btnCloseModal", closeBuyModal);
@@ -287,6 +289,32 @@
         } catch (e) {
             console.error("importPaper error:", e);
             alert("불러오기 요청 중 오류가 발생했습니다.");
+        }
+    }
+
+    // 로컬 prop 계좌를 Turso와 한 번에 동기화(push=로컬→Turso, pull=Turso→로컬)
+    async function syncTurso(direction) {
+        if (ACCOUNT !== "prop") return;
+        const isPush = direction === "push";
+        const msg = isPush
+            ? "로컬 투자제안 기록을 Turso로 완전히 교체합니다.\nTurso 직전 상태는 백업 파일로 저장됩니다. 계속할까요?"
+            : "Turso 기록으로 로컬 투자제안을 완전히 교체합니다.\n로컬 직전 상태는 백업 파일로 저장됩니다. 계속할까요?";
+        if (!confirm(msg)) return;
+        try {
+            const res = await fetch(`/api/paper-trading/sync-turso?direction=${direction}`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+            }).then((r) => r.json());
+            if (res.status === "success") {
+                if (res.backup) downloadJson(res.backup, `algofinder_prop_${direction}_backup_${ymdStamp()}.json`);
+                const im = res.imported || {};
+                alert(`${isPush ? "Turso로 보내기" : "Turso에서 받기"} 완료 (보유 ${im.positions || 0}건 · 체결 ${im.trade_history || 0}건).`);
+                refresh();
+            } else {
+                alert(res.message || "Turso 동기화에 실패했습니다.");
+            }
+        } catch (e) {
+            console.error("syncTurso error:", e);
+            alert("Turso 동기화 요청 중 오류가 발생했습니다.");
         }
     }
 

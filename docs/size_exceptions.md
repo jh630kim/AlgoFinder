@@ -2,14 +2,14 @@
 
 CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입니다. 사용자 검토 대상입니다.
 
-## backend/app/repositories/web_repository.py (<span style="color:red">393줄</span>)
+## backend/app/repositories/web_repository.py (393줄)
 - `WebRepository` 단일 클래스가 웹 대시보드 조회(종목 자동완성, 차트, TOP 수급 랭킹, 지수 summary,
   업종/종목 필터링 등)만 전담하는 단일 책임 안에서, 조회 메서드 개수 자체가 많아 줄 수가 늘어남.
 - 메서드별로 별도 파일로 쪼개면 서로 연관된 대시보드 쿼리가 여러 파일에 흩어져 오히려 탐색성이 떨어짐.
-- <span style="color:red">(2026-08-29) `get_stock_chart_data`에 `end_date`(기준일) 선택 인자 추가 —
-  보조 차트를 화면 기준일까지만 그리기 위한 끝 날짜 제한. 미지정 시 기존과 동일. 약 380 → 393줄.</span>
+- (2026-08-29) `get_stock_chart_data`에 `end_date`(기준일) 선택 인자 추가 —
+  보조 차트를 화면 기준일까지만 그리기 위한 끝 날짜 제한. 미지정 시 기존과 동일. 약 380 → 393줄.
 
-## backend/app/api/routes_paper.py (549줄)
+## backend/app/api/routes_paper.py (<span style="color:red">593줄</span>)
 - 모의투자/투자제안 계좌유형(`account_type`)별 자산 관리 API(backtest, portfolio, reset,
   manual-buy, sell, stock-info, recommended-stocks 등)가 하나의 Blueprint(`paper_api_bp`)에
   묶여 있어 엔드포인트 수만큼 길어짐.
@@ -25,6 +25,8 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
 - (2026-08-29) 디스코드 전달(`notify-recommendations`), 가상매매 JSON
   `export`/`import` 엔드포인트, paper 라우트 5개의 (메인/psession) 2세션 분리(`_paper_session`
   헬퍼). 약 457 → 549줄.
+- <span style="color:red">(2026-08-29) `sync-turso` 엔드포인트(로컬↔Turso HTTP 동기화, push/pull).
+  약 549 → 593줄. 실제 HTTP·SQL 로직은 `services/turso_http_client.py`(신규, 171줄)로 위임.</span>
 
 ## backend/app/services/proposal_advisor.py (254줄)
 - 투자제안/모의투자 화면 데이터 조립(추천·매도신호·포트폴리오 평가)을 담당하는

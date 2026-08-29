@@ -166,6 +166,7 @@ def proposal():
         "proposal.html",
         latest_trading_date=_latest_trading_date(),
         kospi_regime=_kospi_regime_ssr(),
+        turso_sync=_turso_sync_enabled(),
     )
 
 
@@ -176,7 +177,16 @@ def proposal_mobile():
         "proposal_mobile.html",
         latest_trading_date=_latest_trading_date(),
         kospi_regime=_kospi_regime_ssr(),
+        turso_sync=_turso_sync_enabled(),
     )
+
+
+def _turso_sync_enabled() -> bool:
+    """로컬(full 프로필)에서 PAPER_DATABASE_URL 이 설정돼 있으면 Turso 동기화 버튼을 노출한다.
+
+    web 프로필은 앱이 이미 Turso를 직접 보므로 동기화가 무의미해 숨긴다.
+    """
+    return (not WEB_PROFILE) and bool(settings.PAPER_DATABASE_URL)
 
 
 if __name__ == "__main__":
