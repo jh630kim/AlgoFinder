@@ -6,7 +6,7 @@
 """
 
 from typing import Generator
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, make_url
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from backend.app.core.config import settings
 
@@ -44,8 +44,23 @@ class DatabaseManager:
 
     @staticmethod
     def _make_engine(db_url: str):
-        """SQLite 계열이면 멀티스레드 허용 옵션을 붙여 엔진을 생성합니다."""
+        """DB 접속 엔진을 생성합니다.
+
+        - `sqlite+libsql://`(Turso 원격): 인증 토큰은 URL 쿼리(`authToken`)로는 드라이버에
+          전달되지 않으므로, 쿼리에서 분리해 `connect_args["auth_token"]` 로 넘긴다.
+          `secure` 등 나머지 쿼리는 URL에 유지한다.
+        - 순수 `sqlite:`: 멀티스레드 허용(`check_same_thread=False`).
+        """
         connect_args = {}
+        if db_url.startswith("sqlite+libsql"):
+            url = make_url(db_url)
+            query = dict(url.query)
+            token = query.pop("authToken", None) or query.pop("auth_token", None)
+            if token:
+                connect_args["auth_token"] = token
+            # '/' 만 남아 빈 database 인 경우 제거 → 원격 전용 형태로 정규화
+            url = url.set(query=query, database=url.database or None)
+            return create_engine(url, connect_args=connect_args)
         if db_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
         return create_engine(db_url, connect_args=connect_args)
