@@ -55,11 +55,11 @@ jobs:
           gh release view lite-db >/dev/null 2>&1 || gh release create lite-db --notes "rolling lite db"
           gh release upload lite-db data/app_lite.db --clobber
 
-      - name: Trigger Koyeb redeploy
+      - name: Trigger Render deploy
         env:
-          HOOK: ${{ secrets.KOYEB_DEPLOY_HOOK_URL }}
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          if [ -n "$HOOK" ]; then curl -fsSL -X POST "$HOOK"; else echo "KOYEB_DEPLOY_HOOK_URL 미설정 — 건너뜀"; fi
+          if [ -n "$HOOK" ]; then curl -fsSL -X POST "$HOOK"; else echo "RENDER_DEPLOY_HOOK_URL 미설정 — 건너뜀"; fi
 
       - name: Discord notify
         if: always()

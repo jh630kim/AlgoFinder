@@ -14,9 +14,10 @@ RUN pip install --no-cache-dir -r requirements-web.txt
 # 앱 소스
 COPY . .
 
-# 빌드 시 GitHub Release에서 최신 경량 DB를 받아 이미지에 굽는다(URL은 빌드 인자).
-# 예: --build-arg LITE_DB_URL="https://github.com/<owner>/<repo>/releases/download/lite-db/app_lite.db"
-ARG LITE_DB_URL=""
+# 빌드 시 GitHub Release에서 최신 경량 DB를 받아 이미지에 굽는다.
+# Render 무료 플랜은 Docker build-arg 입력 UI가 없어 공개 고정 URL을 기본값으로 둔다.
+# 다른 저장소/호스트에서 재사용 시 --build-arg LITE_DB_URL=... 로 덮어쓰면 된다.
+ARG LITE_DB_URL="https://github.com/jh630kim/AlgoFinder/releases/download/lite-db/app_lite.db"
 RUN mkdir -p data \
     && if [ -n "$LITE_DB_URL" ]; then curl -fSL "$LITE_DB_URL" -o data/app_lite.db; \
        else echo "LITE_DB_URL 미지정 — data/app_lite.db 가 소스에 포함돼 있어야 함"; fi

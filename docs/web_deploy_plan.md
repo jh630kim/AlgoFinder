@@ -34,15 +34,15 @@
 | 갱신 주기·주체 | **GitHub Actions cron 매일 1회** (PC 꺼져 있어도 됨) | 무인 자동화 |
 | 파생 캐시 | 매일 재생성 (`kospi_regime`, `proposal_advisor_cache`) | 지수·가격 바뀌면 무효화됨 |
 | 가상매매 저장소 | **Turso(libSQL)** 단일 원본, `PAPER_DATABASE_URL` 환경변수로 연결 | 재배포에도 유지, SQLite 방언 그대로라 이식 최소 |
-| 연결 방식 | **방법 1** — PC 로컬 앱과 Koyeb 앱 모두 Turso에 직접 연결 (<span style="color:red">`prop`만</span>) | 항상 일치, 병합 로직 불필요 |
-| <span style="color:red">paper 연결 라우팅</span> | <span style="color:red">**`account_type`별 분기**: `rec`→로컬 `app.db`, `prop`→Turso(`PAPER_DATABASE_URL`, 없으면 로컬 폴백)</span> | <span style="color:red">같은 3테이블이지만 쿼리·트랜잭션이 계좌유형별로 완전 분리돼 안전</span> |
+| 연결 방식 | **방법 1** — PC 로컬 앱과 Koyeb 앱 모두 Turso에 직접 연결 (`prop`만) | 항상 일치, 병합 로직 불필요 |
+| paper 연결 라우팅 | **`account_type`별 분기**: `rec`→로컬 `app.db`, `prop`→Turso(`PAPER_DATABASE_URL`, 없으면 로컬 폴백) | 같은 3테이블이지만 쿼리·트랜잭션이 계좌유형별로 완전 분리돼 안전 |
 | 모의투자(`rec`) | 로컬 전용, 이번 작업 범위 아님 | 웹은 투자제안만 |
 | 백업 | PC·모바일 양쪽에서 가상매매 **JSON 내보내기/불러오기** | 무료 티어 약관 변동 대비 |
-| <span style="color:red">불러오기 방식</span> | <span style="color:red">**전체 교체** — `prop` 3테이블 비우고 파일로 재구성. 직전 상태 자동 백업 다운로드</span> | <span style="color:red">백업/복원/기기이동 목적에 부합, 규칙 단순</span> |
-| <span style="color:red">내보내기 범위</span> | <span style="color:red">**계좌 + 보유 + 체결 이력 전체**</span> | <span style="color:red">전체 교체와 일관, 크기 무시 가능(&lt;1MB)</span> |
-| <span style="color:red">모바일 매매</span> | <span style="color:red">**허용** — 매수/매도는 Turso에 기록(영속). `READONLY`는 시세 DB 쓰기만 차단</span> | <span style="color:red">폰에서 바로 매매 가능</span> |
-| <span style="color:red">시세 창 길이</span> | <span style="color:red">**365일**</span> | <span style="color:red">최장 지표는 sma60 + 엔진 200일 버퍼. 최신 거래일 기준 계산이라 365면 큰 마진</span> |
-| <span style="color:red">테스트 코드</span> | <span style="color:red">이번 작업 **제외**</span> | <span style="color:red">규칙상 명시 요청 시에만</span> |
+| 불러오기 방식 | **전체 교체** — `prop` 3테이블 비우고 파일로 재구성. 직전 상태 자동 백업 다운로드 | 백업/복원/기기이동 목적에 부합, 규칙 단순 |
+| 내보내기 범위 | **계좌 + 보유 + 체결 이력 전체** | 전체 교체와 일관, 크기 무시 가능(&lt;1MB) |
+| 모바일 매매 | **허용** — 매수/매도는 Turso에 기록(영속). `READONLY`는 시세 DB 쓰기만 차단 | 폰에서 바로 매매 가능 |
+| 시세 창 길이 | **365일** | 최장 지표는 sma60 + 엔진 200일 버퍼. 최신 거래일 기준 계산이라 365면 큰 마진 |
+| 테스트 코드 | 이번 작업 **제외** | 규칙상 명시 요청 시에만 |
 | Turso 선택 근거 | Neon/Supabase 대비 이식 비용 최소. 단 신생 → **자체 JSON 백업 필수** | — |
 
 ---
@@ -53,8 +53,8 @@
 |---|---|---|---|
 | `APP_PROFILE` | `full` 또는 미설정 | `web` | 화면·라우트 노출 범위 |
 | `DATABASE_URL` | 미설정(→`data/app.db`) | 이미지 내 경량 DB 경로 | 시세 DB 위치 |
-| `READONLY` | `0` | `1` | <span style="color:red">시세 DB 쓰기(동기화 버튼/`/api/sync`)만 차단. 가상매매는 영향 없음</span> |
-| `PAPER_DATABASE_URL` | <span style="color:red">Turso 주소 (`prop`을 PC·모바일 공유하려면 필수)</span> | Turso 주소 | <span style="color:red">`prop` 가상매매 저장소. 미설정 시 `prop`도 로컬 `app.db` 폴백</span> |
+| `READONLY` | `0` | `1` | 시세 DB 쓰기(동기화 버튼/`/api/sync`)만 차단. 가상매매는 영향 없음 |
+| `PAPER_DATABASE_URL` | Turso 주소 (`prop`을 PC·모바일 공유하려면 필수) | Turso 주소 | `prop` 가상매매 저장소. 미설정 시 `prop`도 로컬 `app.db` 폴백 |
 | `FLASK_DEBUG` | `True` | `False` | — |
 
 ---
@@ -93,16 +93,16 @@
 
 ---
 
-## 6. <span style="color:red">결정 완료 (2026-08-28 확정)</span>
+## 6. 결정 완료 (2026-08-28 확정)
 
 | # | 항목 | 결정 |
 |---|---|---|
-| 1 | 불러오기 방식 | <span style="color:red">**전체 교체** (병합 미구현). 불러오기 직전 상태 자동 백업 다운로드</span> |
-| 2 | 내보내기 범위 | <span style="color:red">**계좌 + 보유 + 체결 이력 전체**</span> |
-| 3 | 모바일 매매 | <span style="color:red">**허용** — 매수/매도는 Turso에 기록. `READONLY`는 시세 DB 쓰기만 차단</span> |
-| 4 | paper 연결 | <span style="color:red">**`account_type`별 라우팅** — `rec`→로컬 `app.db`, `prop`→Turso(미설정 시 로컬 폴백)</span> |
-| 5 | 테스트 코드 | <span style="color:red">**이번 작업 제외**</span> |
-| 6 | 시세 창 길이 | <span style="color:red">**365일** (최장 지표 sma60 + 엔진 200일 버퍼를 큰 마진으로 커버)</span> |
+| 1 | 불러오기 방식 | **전체 교체** (병합 미구현). 불러오기 직전 상태 자동 백업 다운로드 |
+| 2 | 내보내기 범위 | **계좌 + 보유 + 체결 이력 전체** |
+| 3 | 모바일 매매 | **허용** — 매수/매도는 Turso에 기록. `READONLY`는 시세 DB 쓰기만 차단 |
+| 4 | paper 연결 | **`account_type`별 라우팅** — `rec`→로컬 `app.db`, `prop`→Turso(미설정 시 로컬 폴백) |
+| 5 | 테스트 코드 | **이번 작업 제외** |
+| 6 | 시세 창 길이 | **365일** (최장 지표 sma60 + 엔진 200일 버퍼를 큰 마진으로 커버) |
 
 ---
 
@@ -181,18 +181,18 @@
 | # | 제목 | 요약 |
 |---|---|---|
 | 1 | 실행 프로필 분기 | `APP_PROFILE`(full/web)에 따라 라우트 등록 범위와 랜딩 화면을 다르게. web이면 투자제안 모바일만 노출, PC·백테스트 라우트 비활성. |
-| 2 | 읽기 전용 모드 | `READONLY=1`이면 수급 동기화 버튼 숨김, `/api/sync` 및 시세 쓰기 엔드포인트 차단. <span style="color:red">가상매매(Turso 쓰기)는 제외.</span> |
-| 3 | <span style="color:red">paper_* 저장소 연결 분기</span> | <span style="color:red">`account_type`별 세션 라우팅 — `rec`→메인 엔진(로컬 `app.db`), `prop`→`PAPER_DATABASE_URL`(Turso, 없으면 메인 폴백). Turso 엔진에도 `paper_*` 스키마 보장, libSQL에서 `ALTER TABLE` 마이그레이션 무해하게 보정.</span> |
+| 2 | 읽기 전용 모드 | `READONLY=1`이면 수급 동기화 버튼 숨김, `/api/sync` 및 시세 쓰기 엔드포인트 차단. 가상매매(Turso 쓰기)는 제외. |
+| 3 | paper_* 저장소 연결 분기 | `account_type`별 세션 라우팅 — `rec`→메인 엔진(로컬 `app.db`), `prop`→`PAPER_DATABASE_URL`(Turso, 없으면 메인 폴백). Turso 엔진에도 `paper_*` 스키마 보장, libSQL에서 `ALTER TABLE` 마이그레이션 무해하게 보정. |
 | 4 | 가상매매 JSON 내보내기 | `prop` 계좌·보유·체결을 스키마 버전 포함 단일 JSON으로 반환하는 조회 + PC·모바일 화면 포트폴리오 카드에 "내보내기" 버튼(브라우저 다운로드). |
 | 5 | 가상매매 JSON 불러오기 | 업로드 파일 검증 → 직전 상태 자동 백업 다운로드 → `prop` 데이터 전체 교체. "완전 대체" 확인 모달 + 결과 토스트. |
-| 6 | DB 다이어트 스크립트 | <span style="color:red">전체 DB에서 최근 **365일** + 타깃 종목 + `paper_*` 스키마(데이터 제외)만 남긴 경량 SQLite 생성. `strategy_*`/`sync_logs`/`rec`/`prop` 데이터 제외.</span> |
+| 6 | DB 다이어트 스크립트 | 전체 DB에서 최근 **365일** + 타깃 종목 + `paper_*` 스키마(데이터 제외)만 남긴 경량 SQLite 생성. `strategy_*`/`sync_logs`/`rec`/`prop` 데이터 제외. |
 | 7 | 롤링 증분 갱신 스크립트 | 보관된 경량 DB 로드 → 새 거래일 증분 수집 → 1년 창 밖 삭제 → 파생 캐시 재생성 → 산출. |
 | 8 | Dockerfile + 실행 설정 | 경량 의존성 설치, 빌드 시 Release에서 경량 DB 취득, gunicorn으로 `app:app` 구동, 헬스체크 경로. |
 | 9 | GitHub Actions 워크플로 | cron + 수동실행으로 7번 파이프라인 실행 → Release 자산 갱신 → Koyeb redeploy 훅 호출 → Discord 알림. |
 | 10 | 경량 서빙 의존성 정리 | `fastapi`/`uvicorn`/`psycopg2` 제외한 서빙 전용 requirements 정리(기존 `deploy/requirements-pa.txt` 재활용). |
 | 11 | 환경변수·배포 문서 | 필요한 환경변수 목록, 로컬 vs Koyeb 설정값 표, 최초 배포 순서, 기존 `deploy/`(PythonAnywhere용) 정리. |
 | 12 | (선택) PWA 매니페스트 | 휴대폰 홈 화면 추가 시 브라우저 저장소 수명 연장(특히 iOS Safari 7일 정책 회피). |
-| 13 | <span style="color:red">~~테스트 코드~~</span> | <span style="color:red">이번 작업 제외 확정. 추후 "테스트 코드 작성해" 지시 시 다이어트/증분/JSON 입출력 대상.</span> |
+| 13 | ~~테스트 코드~~ | 이번 작업 제외 확정. 추후 "테스트 코드 작성해" 지시 시 다이어트/증분/JSON 입출력 대상. |
 
 ---
 
@@ -205,33 +205,53 @@
 - [ ] 가상매매는 Turso 단일 원본, PC·모바일 직접 연결(방법 1)이 맞다
 - [ ] 로컬 전체 앱 동작은 지금과 달라지지 않는다 (`.env` 안 건드리면)
 - [ ] JSON 내보내기/불러오기는 PC·모바일 양쪽 투자제안 화면에 있다
-- [ ] <span style="color:red">`rec`는 로컬 `app.db`, `prop`은 Turso로 `account_type`별 라우팅한다</span>
-- [ ] <span style="color:red">모바일에서도 매수/매도가 되며, 그 기록은 Turso에 영속된다</span>
+- [ ] `rec`는 로컬 `app.db`, `prop`은 Turso로 `account_type`별 라우팅한다
+- [ ] 모바일에서도 매수/매도가 되며, 그 기록은 Turso에 영속된다
 
-<span style="color:red">이 문서 내용이 맞으면 승인 회신을 주시면 코딩 단계로 들어갑니다. (6장 결정 완료)</span>
+이 문서 내용이 맞으면 승인 회신을 주시면 코딩 단계로 들어갑니다. (6장 결정 완료)
 
 ---
 
-## 9. <span style="color:red">구현 현황 (2026-08-29 야간 배치)</span>
+## 9. 구현 현황 (2026-08-29 야간 배치)
 
-<span style="color:red">§7-B(내가 할 일) 중 **코드·스크립트·설정 1~12는 구현·로컬 검증 완료**. §7-A(사용자
-계정 작업)는 미착수. 커밋: `ca942db`(1~5), `b5d373b`(6~7), `02ac501`(8~12). push 안 함.</span>
+§7-B(내가 할 일) 중 **코드·스크립트·설정 1~12는 구현·로컬 검증 완료**. §7-A(사용자
+계정 작업)는 미착수. 커밋: `ca942db`(1~5), `b5d373b`(6~7), `02ac501`(8~12). push 안 함.
 
 | # | 항목 | 상태 |
 |---|---|---|
-| 1 | 실행 프로필 분기 | <span style="color:red">완료 — `config.APP_PROFILE`, `app.py` `before_request` 게이트(web이면 PC 4페이지 → `/proposal-mobile` 302)</span> |
-| 2 | 읽기 전용 모드 | <span style="color:red">완료 — `config.READONLY`, `/api/sync*` 403, `index.html` 동기화 버튼 조건부 숨김. 가상매매 쓰기는 허용</span> |
-| 3 | paper_* 저장소 연결 분기 | <span style="color:red">완료 — `db_manager.get_paper_session(account_type)`, `prop`+`PAPER_DATABASE_URL`이면 전용 엔진(없으면 메인 폴백). routes_paper 5개 라우트 2세션 분리. **libSQL 실연결은 Turso 계정 필요로 미검증**, 로컬 폴백만 검증</span> |
-| 4 | 가상매매 JSON 내보내기 | <span style="color:red">완료 — `GET /api/paper-trading/export`, PC/모바일 `⬇️ 내보내기` 버튼</span> |
-| 5 | 가상매매 JSON 불러오기 | <span style="color:red">완료 — `POST /api/paper-trading/import`(스키마 검증 → 직전상태 backup 반환 → 전체 교체), `⬆️ 불러오기` 버튼(백업 자동 다운로드). 왕복 검증</span> |
-| 6 | DB 다이어트 스크립트 | <span style="color:red">완료 — `deploy/build_lite_db.py`. 231MB → **20.4MB**. 이 경량 DB로 web 프로필 구동 시 추천 결과가 full DB와 동일</span> |
-| 7 | 롤링 증분 갱신 스크립트 | <span style="color:red">완료 — `deploy/roll_lite_db.py`. 프루닝/VACUUM 검증. 증분 수집은 KRX 라이브라 CI에서(`--skip-collect` 기본)</span> |
-| 8 | Dockerfile + 실행 설정 | <span style="color:red">완료 — `Dockerfile`, `.dockerignore`. Docker 미설치로 이미지 빌드는 미실행</span> |
-| 9 | GitHub Actions 워크플로 | <span style="color:red">완료 — `.github/workflows/roll-lite-db.yml`. 시크릿 미설정 시 각 단계 skip</span> |
-| 10 | 경량 서빙 의존성 | <span style="color:red">완료 — `deploy/requirements-web.txt`</span> |
-| 11 | 환경변수·배포 문서 | <span style="color:red">완료 — `deploy/README.md`</span> |
-| 12 | PWA 매니페스트 | <span style="color:red">완료 — `static/manifest.webmanifest` + 모바일 head 메타. 아이콘 PNG는 사용자 추가 필요</span> |
+| 1 | 실행 프로필 분기 | 완료 — `config.APP_PROFILE`, `app.py` `before_request` 게이트(web이면 PC 4페이지 → `/proposal-mobile` 302) |
+| 2 | 읽기 전용 모드 | 완료 — `config.READONLY`, `/api/sync*` 403, `index.html` 동기화 버튼 조건부 숨김. 가상매매 쓰기는 허용 |
+| 3 | paper_* 저장소 연결 분기 | 완료 — `db_manager.get_paper_session(account_type)`, `prop`+`PAPER_DATABASE_URL`이면 전용 엔진(없으면 메인 폴백). routes_paper 5개 라우트 2세션 분리. **libSQL 실연결은 Turso 계정 필요로 미검증**, 로컬 폴백만 검증 |
+| 4 | 가상매매 JSON 내보내기 | 완료 — `GET /api/paper-trading/export`, PC/모바일 `⬇️ 내보내기` 버튼 |
+| 5 | 가상매매 JSON 불러오기 | 완료 — `POST /api/paper-trading/import`(스키마 검증 → 직전상태 backup 반환 → 전체 교체), `⬆️ 불러오기` 버튼(백업 자동 다운로드). 왕복 검증 |
+| 6 | DB 다이어트 스크립트 | 완료 — `deploy/build_lite_db.py`. 231MB → **20.4MB**. 이 경량 DB로 web 프로필 구동 시 추천 결과가 full DB와 동일 |
+| 7 | 롤링 증분 갱신 스크립트 | 완료 — `deploy/roll_lite_db.py`. 프루닝/VACUUM 검증. 증분 수집은 KRX 라이브라 CI에서(`--skip-collect` 기본) |
+| 8 | Dockerfile + 실행 설정 | 완료 — `Dockerfile`, `.dockerignore`. Docker 미설치로 이미지 빌드는 미실행 |
+| 9 | GitHub Actions 워크플로 | 완료 — `.github/workflows/roll-lite-db.yml`. 시크릿 미설정 시 각 단계 skip |
+| 10 | 경량 서빙 의존성 | 완료 — `deploy/requirements-web.txt` |
+| 11 | 환경변수·배포 문서 | 완료 — `deploy/README.md` |
+| 12 | PWA 매니페스트 | 완료 — `static/manifest.webmanifest` + 모바일 head 메타. 아이콘 PNG는 사용자 추가 필요 |
 
-<span style="color:red">**사용자 조치 필요(§7-A)**: GitHub 원격 push·Actions 권한, Turso 가입·DB·토큰,
+**사용자 조치 필요(§7-A)**: GitHub 원격 push·Actions 권한, Turso 가입·DB·토큰,
 Koyeb 앱 생성·환경변수·빌드인자(`LITE_DB_URL`)·배포 훅, GitHub Secrets 등록,
-최초 경량 DB를 `lite-db` Release 자산으로 업로드. 상세 체크리스트는 `deploy/README.md`.</span>
+최초 경량 DB를 `lite-db` Release 자산으로 업로드. 상세 체크리스트는 `deploy/README.md`.
+
+---
+
+## 10. <span style="color:red">[20260829] 호스트 변경: Koyeb → Render</span>
+
+<span style="color:red">Koyeb가 2026-02 Mistral AI에 인수되며 **신규 가입자에게 무료 티어를 중단**(유료 플랜만
+가능). 대시보드에 Web Service 생성 UI 자체가 노출되지 않음 → 호스트를 **Render.com** 으로 교체한다.
+경량 DB·Turso·GitHub Actions 롤링 구조는 그대로다.</span>
+
+| <span style="color:red">항목</span> | <span style="color:red">Koyeb(폐기)</span> | <span style="color:red">Render(신규)</span> |
+|---|---|---|
+| <span style="color:red">서비스</span> | <span style="color:red">Koyeb App</span> | <span style="color:red">Render Web Service (Free, Singapore)</span> |
+| <span style="color:red">빌더</span> | <span style="color:red">Dockerfile + build-arg `LITE_DB_URL`</span> | <span style="color:red">Dockerfile. Render 무료는 build-arg UI 없음 → `Dockerfile` 의 `ARG LITE_DB_URL` 기본값을 공개 Release URL로 고정</span> |
+| <span style="color:red">포트</span> | <span style="color:red">`PORT` 주입</span> | <span style="color:red">`PORT` 주입(≈10000). 환경변수로 직접 넣지 않음</span> |
+| <span style="color:red">헬스체크</span> | <span style="color:red">`/proposal-mobile`</span> | <span style="color:red">`/proposal-mobile` (동일)</span> |
+| <span style="color:red">재배포 훅</span> | <span style="color:red">Secret `KOYEB_DEPLOY_HOOK_URL`</span> | <span style="color:red">Secret `RENDER_DEPLOY_HOOK_URL`, `roll-lite-db.yml` 스텝명 `Trigger Render deploy`</span> |
+| <span style="color:red">무료 제약</span> | <span style="color:red">(신규 불가)</span> | <span style="color:red">15분 유휴 시 슬립 → 첫 접속 콜드스타트(~50초), 750h/월</span> |
+
+<span style="color:red">**코드 변경(커밋)**: `Dockerfile`(`LITE_DB_URL` 기본값), `.github/workflows/roll-lite-db.yml`
+(Render 훅), `deploy/README.md`, `docs/배포준비.md`. 실행 체크리스트는 `docs/배포준비.md` 참조.</span>
