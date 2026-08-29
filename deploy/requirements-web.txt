@@ -11,5 +11,6 @@ pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 
-# 가상매매 저장소로 Turso(libSQL)를 쓸 때만 필요(PAPER_DATABASE_URL 이 libsql://... 인 경우).
-# sqlalchemy-libsql>=0.1.0
+# 가상매매 저장소로 Turso(libSQL)를 쓸 때 필요(PAPER_DATABASE_URL 이 sqlite+libsql://... 인 경우).
+# libsql-experimental 는 cp312 manylinux 휠 제공 → python:3.12-slim 이미지에서 컴파일 없이 설치됨.
+sqlalchemy-libsql>=0.2.0
