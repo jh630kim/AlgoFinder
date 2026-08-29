@@ -94,13 +94,15 @@ def backtest_run():
             start_date = target_dates[0]
             end_date = target_dates[-1]
 
-        # 백테스트 결과 3개 테이블 전체 초기화 후 단일 전략 8종(combo_id 1~8)만 재연산
+        # 백테스트 결과 3개 테이블 전체 초기화 후 단일 전략만 재연산.
+        # S1b/S1c 폐기(Phase 1) → combo_id 1·2·5·6·7·8 (6종). 결번 유지.
         StrategyLeaderboardRepository(session).clear_all()
         StrategyTradeLogsRepository(session).clear_all()
         StrategyDailyEquityRepository(session).clear_all()
 
+        combo_ids = [1, 2, 5, 6, 7, 8]
         engine = BacktestEngine(session)
-        for c_id in range(1, 9):
+        for i, c_id in enumerate(combo_ids, 1):
             try:
                 engine.run_backtest_for_combo(
                     combo_id=c_id,
@@ -112,8 +114,8 @@ def backtest_run():
                 )
             except Exception as e:
                 logger.error(f"Combo {c_id} 오류: {e}")
-            BACKTEST_PROGRESS["completed"] = c_id
-            BACKTEST_PROGRESS["message"] = f"전략 조합 {c_id}/8 연산 완료..."
+            BACKTEST_PROGRESS["completed"] = i
+            BACKTEST_PROGRESS["message"] = f"전략 조합 {i}/{len(combo_ids)} 연산 완료..."
 
         # 렌더 payload를 1회 조립해 파일 캐시에 저장 (이후 조회는 재조립 없이 반환)
         from backend.app.services.backtest_leaderboard_builder import BacktestLeaderboardBuilder
@@ -166,7 +168,7 @@ def _close_on_or_before(session, code: str, ymd: str):
 
 @paper_api_bp.route("/recommended-stocks", methods=["GET"])
 def recommended_stocks():
-    """S1~S5(8전략) 전략별 TOP 3 매수 추천 종목 반환 API.
+    """S1~S5(6전략) 전략별 TOP 3 매수 추천 종목 반환 API.
 
     mode=advice(기본, 투자제안): 신호 판단일=기준일(D-0).
     mode=sim(모의투자): 신호 판단일=기준일 직전 거래일(D-1), 추천가는 기준일(D-0) 종가.

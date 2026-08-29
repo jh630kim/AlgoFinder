@@ -1,7 +1,7 @@
 """
 투자제안 화면 데이터 조립 서비스 모듈 (proposal_advisor.py).
 
-기준일 기준으로 S1~S5(8전략) 매수 신호를 산출해 전략별 TOP N 추천을 만들고,
+기준일 기준으로 S1~S5(6전략) 매수 신호를 산출해 전략별 TOP N 추천을 만들고,
 보유 종목에 대해 매도 신호(전략 매도신호 / -5% 손절 / +10% 익절)를 판정하는 ProposalAdvisor 클래스.
 
 판단 기준일 모드(mode):
@@ -19,13 +19,14 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
 from backend.app.models.all_stock_master import AllStockMaster
-from backend.app.services.backtest_engine import BacktestEngine, STRATEGY_MAP
+from backend.app.services.backtest_engine import (
+    BacktestEngine, STRATEGY_MAP, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
+)
 
 logger = logging.getLogger(__name__)
 
 TARGET_SECTORS = ["KOSPI 200", "KOSDAQ 150"]
-STOP_LOSS_PCT = -5.0
-TAKE_PROFIT_PCT = 10.0
+# STOP_LOSS_PCT / TAKE_PROFIT_PCT 는 backtest_engine 에서 import (백테스트와 동일 값 공유)
 
 # 창 크기(달력일): 앞쪽은 지표 워밍업, 뒤쪽은 '다음날 조회' 반복을 재로딩 없이 흡수
 WARMUP_CAL_DAYS = 135
@@ -35,15 +36,12 @@ FORWARD_CAL_DAYS = 180
 COVER_SLACK_CAL_DAYS = 25
 
 STRATEGY_LABELS = {
-    "S1": "🔵 S1 골든크로스", "S1a": "🔵 S1a 거래량 필터형", "S1b": "🟣 S1b 원본 수식형",
-    "S1c": "🟡 S1c 20일선 적응형", "S2": "🟢 S2 눌림목 돌파", "S3": "🟠 S3 볼린저 밴드",
-    "S4": "🔴 S4 RSI 과매수", "S5": "🕯️ S5 캔들 패턴",
+    "S1": "🔵 S1 골든크로스", "S1a": "🔵 S1a 거래량 필터형", "S2": "🟢 S2 눌림목 돌파",
+    "S3": "🟠 S3 볼린저 밴드", "S4": "🔴 S4 RSI 과매수", "S5": "🕯️ S5 캔들 패턴",
 }
 STRATEGY_BUY_REASON = {
     "S1": "5/20일 골든크로스 및 60일선 정배열 추세 포착",
     "S1a": "골든크로스 + 거래량 급증 동시 충족",
-    "S1b": "골든크로스 및 승률 Z-Score 기준 매수 조건 충족",
-    "S1c": "20일선 추세 적응형 매수 타점 포착",
     "S2": "과매도 눌림목 이후 상방 돌파 포착",
     "S3": "볼린저 밴드 하단 반등 또는 밴드 수축 후 돌파 포착",
     "S4": "RSI 과매도 구간 반등 포착",
@@ -159,7 +157,7 @@ class ProposalAdvisor:
         return pdf[(pdf["date"] == self._signal_date) & (pdf["signal_sell"].fillna(False))]
 
     def get_recommendations(self, target_date: str, top_n: int = 3) -> Dict[str, Any]:
-        """기준일 종가 기준 8전략 각각의 매수 신호 TOP N 추천 목록을 반환합니다.
+        """기준일 종가 기준 6전략 각각의 매수 신호 TOP N 추천 목록을 반환합니다.
 
         :param target_date: 추천 기준일 (YYYYMMDD)
         :param top_n: 전략별 상위 노출 개수

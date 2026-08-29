@@ -101,19 +101,19 @@
 
             <!-- 메인 대시보드 2단 레이아웃 콘텐츠 (상단 기술적 매매지표 & 하단 주가/수급 복합 차트) -->
             <section class="dashboard-grid">
-                <!-- [차트 1] 프리미엄 기술적 매매지표 S1c HUD 복합 차트 카드 -->
+                <!-- [차트 1] 프리미엄 기술적 매매지표 복합 차트 카드 -->
                 <div class="glass-card full-width">
                     <div class="card-header" style="flex-direction: column; align-items: flex-start; gap: 10px;">
                         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                             <div>
-                                <h3 class="card-title">📈 기술적 매매지표 (S1c 20일선 적응형)</h3>
+                                <h3 class="card-title">📈 기술적 매매지표 (S1~S5)</h3>
                                 <p style="font-size: 0.82rem; color: #94a3b8; margin-top: 2px;">
                                     5일선(MA5) & 20일선(MA20) 듀얼 이평선 골든/데드크로스 매매 타점 포착
                                 </p>
                             </div>
                         </div>
 
-                        <!-- 8종 퀀트 전략 지표 칩 툴바 표기 -->
+                        <!-- 퀀트 전략 지표 칩 툴바 (S1b/S1c 폐기 → 숨김) -->
                         <div class="strategy-chip-toolbar">
                             <label class="tech-chip chip-green">
                                 <input type="checkbox" id="chkChipS1" checked>
@@ -123,11 +123,11 @@
                                 <input type="checkbox" id="chkChipS1aVol">
                                 <span class="chip-label">🔵 S1a 거래량 동반형</span>
                             </label>
-                            <label class="tech-chip chip-purple">
+                            <label class="tech-chip chip-purple" style="display: none;">
                                 <input type="checkbox" id="chkChipS1bOld">
                                 <span class="chip-label">🟣 S1b 수급 필터형</span>
                             </label>
-                            <label class="tech-chip chip-gold">
+                            <label class="tech-chip chip-gold" style="display: none;">
                                 <input type="checkbox" id="chkChipS1c">
                                 <span class="chip-label">🟡 S1c 20일선 적응형</span>
                             </label>

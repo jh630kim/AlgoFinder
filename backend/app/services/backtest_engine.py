@@ -21,8 +21,6 @@ from backend.app.repositories.strategy_daily_equity_repository import StrategyDa
 
 from backend.app.services.strategies.s1_ma_cross import S1MACrossStrategy
 from backend.app.services.strategies.s1a_ma_cross_volume import S1aMACrossVolumeStrategy
-from backend.app.services.strategies.s1b_ma_cross_legacy import S1bMACrossLegacyStrategy
-from backend.app.services.strategies.s1c_ma_cross_adaptive import S1cMACrossAdaptiveStrategy
 from backend.app.services.strategies.s2_breakout import S2BreakoutStrategy
 from backend.app.services.strategies.s3_bollinger import S3BollingerStrategy
 from backend.app.services.strategies.s4_rsi_overbought import S4RSIStrategy
@@ -30,25 +28,30 @@ from backend.app.services.strategies.s5_candle_patterns import S5CandlePatternsS
 
 logger = logging.getLogger(__name__)
 
+# 백테스트 청산 임계값(실화면 proposal_advisor 와 공유하는 단일 소스).
+# 손익률(매수가 대비 %)이 이 값 이하/이상이면 D-0 종가에 청산.
+STOP_LOSS_PCT = -5.0
+TAKE_PROFIT_PCT = 10.0
+
+# S1b/S1c 전략 폐기(Phase 1). 클래스 파일은 존치하되 STRATEGY_MAP/COMBOS 에서 제외 →
+# 리더보드·추천·차트가 자동으로 6개 단일 전략만 다룬다.
 STRATEGY_MAP = {
     "S1": S1MACrossStrategy(),
     "S1a": S1aMACrossVolumeStrategy(),
-    "S1b": S1bMACrossLegacyStrategy(),
-    "S1c": S1cMACrossAdaptiveStrategy(),
     "S2": S2BreakoutStrategy(),
     "S3": S3BollingerStrategy(),
     "S4": S4RSIStrategy(),
     "S5": S5CandlePatternsStrategy(),
 }
 
+# 폐기된 3·4·11·12·15·16·20·21(S1b/S1c 포함) 제거. 남은 combo_id 는 번호 유지(결번).
 STRATEGY_COMBOS = {
-    1: ("S1", ["S1"]), 2: ("S1a", ["S1a"]), 3: ("S1b", ["S1b"]), 4: ("S1c", ["S1c"]),
+    1: ("S1", ["S1"]), 2: ("S1a", ["S1a"]),
     5: ("S2", ["S2"]), 6: ("S3", ["S3"]), 7: ("S4", ["S4"]), 8: ("S5", ["S5"]),
-    9: ("S1+S2", ["S1", "S2"]), 10: ("S1a+S2", ["S1a", "S2"]), 11: ("S1b+S2", ["S1b", "S2"]), 12: ("S1c+S2", ["S1c", "S2"]),
-    13: ("S1+S3", ["S1", "S3"]), 14: ("S1a+S3", ["S1a", "S3"]), 15: ("S1b+S3", ["S1b", "S3"]), 16: ("S1c+S3", ["S1c", "S3"]),
+    9: ("S1+S2", ["S1", "S2"]), 10: ("S1a+S2", ["S1a", "S2"]),
+    13: ("S1+S3", ["S1", "S3"]), 14: ("S1a+S3", ["S1a", "S3"]),
     17: ("S2+S3", ["S2", "S3"]),
     18: ("S1+S2+S3", ["S1", "S2", "S3"]), 19: ("S1a+S2+S3", ["S1a", "S2", "S3"]),
-    20: ("S1b+S2+S3", ["S1b", "S2", "S3"]), 21: ("S1c+S2+S3", ["S1c", "S2", "S3"])
 }
 
 
@@ -244,46 +247,57 @@ class BacktestEngine:
                 continue
             prev_d = dates[d_idx - 1]
 
-            # 1. 기존 포지션 매도 판정 (D-1 신호 기준, D-0 종가 체결)
+            # 1. 기존 포지션 매도 판정
+            #    청산 우선순위(elif): 손절(-5%) → 익절(+10%) → 전략매도(D-1 signal_sell).
+            #    셋 다 그날(D-0) 종가에 체결. 손익률은 D-0 종가 기준 일 1회 판정(장중 고저 미고려).
             symbols_to_sell = []
             for sym, pos in list(positions.items()):
                 pos["holding_days"] += 1
-                should_sell = False
-                for d_map in dict_maps:
-                    row_prev = d_map.get((sym, prev_d))
-                    if row_prev and row_prev.get("signal_sell", False):
-                        should_sell = True
-                        break
+                row_curr = dict_maps[0].get((sym, d))
+                if not row_curr:
+                    continue  # 당일 종가가 없으면 이 포지션은 이번 날 평가·청산 보류
 
-                if should_sell:
-                    row_curr = dict_maps[0].get((sym, d))
-                    if row_curr:
-                        sell_price = float(row_curr["close_price"])
-                        revenue = pos["shares"] * sell_price
-                        profit_krw = revenue - (pos["shares"] * pos["buy_price"])
-                        profit_pct = (sell_price - pos["buy_price"]) / pos["buy_price"] * 100.0
-                        cash += revenue
-                        closed_trades.append(profit_pct)
+                sell_price = float(row_curr["close_price"])
+                pnl_pct = (sell_price - pos["buy_price"]) / pos["buy_price"] * 100.0
 
-                        # 체결 직후 자산: 현금 + 남은 보유종목을 당일 종가로 평가 (매도 확정분 제외)
-                        curr_equity = self._portfolio_equity(
-                            cash, positions, dict_maps[0], d, exclude=set(symbols_to_sell) | {sym}
-                        )
-                        cum_ret = (curr_equity - initial_capital) / initial_capital * 100.0
+                sell_reason = None
+                if pnl_pct <= STOP_LOSS_PCT:
+                    sell_reason = "손절"
+                elif pnl_pct >= TAKE_PROFIT_PCT:
+                    sell_reason = "익절"
+                else:
+                    for d_map in dict_maps:
+                        row_prev = d_map.get((sym, prev_d))
+                        if row_prev and row_prev.get("signal_sell", False):
+                            sell_reason = "전략매도"
+                            break
 
-                        # 슬롯 번호 조회 후 반환
-                        sold_slot = symbol_to_slot.pop(sym, 0)
-                        available_slots.add(sold_slot)
+                if sell_reason:
+                    revenue = pos["shares"] * sell_price
+                    profit_krw = revenue - (pos["shares"] * pos["buy_price"])
+                    profit_pct = pnl_pct
+                    cash += revenue
+                    closed_trades.append(profit_pct)
 
-                        logs.append({
-                            "combo_id": combo_id, "trade_date": d, "symbol": sym, "name": pos["name"],
-                            "trade_type": "SELL", "holding_days": pos["holding_days"], "shares": pos["shares"],
-                            "unit_price": sell_price, "total_amount": revenue, "equity_after_trade": curr_equity,
-                            "cum_return_pct": round(cum_ret, 2), "profit_pct": round(profit_pct, 2),
-                            "profit_krw": round(profit_krw, 0), "prob_up": pos["prob_up"],
-                            "strategy_tag": "SELL", "slot_no": sold_slot
-                        })
-                        symbols_to_sell.append(sym)
+                    # 체결 직후 자산: 현금 + 남은 보유종목을 당일 종가로 평가 (매도 확정분 제외)
+                    curr_equity = self._portfolio_equity(
+                        cash, positions, dict_maps[0], d, exclude=set(symbols_to_sell) | {sym}
+                    )
+                    cum_ret = (curr_equity - initial_capital) / initial_capital * 100.0
+
+                    # 슬롯 번호 조회 후 반환
+                    sold_slot = symbol_to_slot.pop(sym, 0)
+                    available_slots.add(sold_slot)
+
+                    logs.append({
+                        "combo_id": combo_id, "trade_date": d, "symbol": sym, "name": pos["name"],
+                        "trade_type": "SELL", "holding_days": pos["holding_days"], "shares": pos["shares"],
+                        "unit_price": sell_price, "total_amount": revenue, "equity_after_trade": curr_equity,
+                        "cum_return_pct": round(cum_ret, 2), "profit_pct": round(profit_pct, 2),
+                        "profit_krw": round(profit_krw, 0), "prob_up": pos["prob_up"],
+                        "strategy_tag": sell_reason, "slot_no": sold_slot
+                    })
+                    symbols_to_sell.append(sym)
 
             for sym in symbols_to_sell:
                 del positions[sym]
