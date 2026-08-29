@@ -85,9 +85,18 @@ class DatabaseManager:
             except Exception:
                 pass
 
-        # prop 전용 엔진이 별도로 있으면 그쪽에도 paper_* 스키마를 보장
+        # prop 전용 엔진이 별도면(Turso 등) paper_* 3개 테이블만 보장한다.
+        # 시세/전략 테이블은 Turso에 두지 않는다. 또한 libSQL 원격은 create_all 의
+        # 존재 프리체크가 불안정해, 테이블별로 개별 생성하고 중복 예외는 무시한다.
         if self.paper_engine is not None:
-            Base.metadata.create_all(bind=self.paper_engine)
+            for name in ("paper_portfolios", "paper_positions", "paper_trade_histories"):
+                table = Base.metadata.tables.get(name)
+                if table is None:
+                    continue
+                try:
+                    table.create(bind=self.paper_engine, checkfirst=True)
+                except Exception:
+                    pass  # 이미 존재(원격 프리체크 실패 포함)하면 무시
             self._migrate_paper_columns(self.paper_engine)
 
     @staticmethod
