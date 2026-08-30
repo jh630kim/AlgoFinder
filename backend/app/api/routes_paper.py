@@ -192,7 +192,10 @@ def recommended_stocks():
     session = next(db_manager.get_session())
     try:
         from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
-        result = ProposalAdvisorCache.get(session, target_date, mode).get_recommendations(target_date)
+        adv = ProposalAdvisorCache.get(session, target_date, mode)
+        result = adv.get_recommendations(target_date)
+        # 순수관행 합성 점수 TOP 10 (신호 유무 무관)
+        result["composite_top"] = adv.get_composite_top(target_date, n=10)["data"]
         return jsonify({"status": "success", **result})
     finally:
         session.close()

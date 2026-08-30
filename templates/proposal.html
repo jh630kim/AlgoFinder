@@ -90,6 +90,7 @@
                                 <th style="padding: 10px;">수량</th>
                                 <th style="padding: 10px;">투입 금액</th>
                                 <th style="padding: 10px;">현재가(선택일)</th>
+                                <th style="padding: 10px;">합성 점수 (등수)</th>
                                 <th style="padding: 10px;">평가 손익 (%)</th>
                                 <th style="padding: 10px;">매도 관리</th>
                                 <th style="padding: 10px;">[차트보기]</th>
@@ -97,7 +98,7 @@
                         </thead>
                         <tbody id="holdingsBody">
                             <tr>
-                                <td colspan="9" style="padding: 24px; color: #64748b;">불러오는 중...</td>
+                                <td colspan="10" style="padding: 24px; color: #64748b;">불러오는 중...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -153,6 +154,31 @@
                         <tbody id="recBody">
                             <tr>
                                 <td colspan="7" style="padding: 20px; color: #64748b;">불러오는 중...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 🏅 [컴포넌트 4] 순수관행 합성 점수 TOP 10 (신호 유무 무관, 유니버스 전체 랭킹) -->
+            <section class="card" style="border-color: rgba(251, 191, 36, 0.5);">
+                <h3 style="margin: 0 0 6px 0; color: #fbbf24; font-size: 16px; font-weight: 800;">🏅 순수관행 합성 점수 TOP 10</h3>
+                <p style="font-size: 12px; color: #94a3b8; margin: 0 0 14px 0;">가격·지수 팩터 합성 점수 기준 상위 10종 (매수 신호 여부와 무관). 매수 시 개시 전략은 "순수관행"으로 기록됩니다.</p>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center;">
+                        <thead>
+                            <tr style="background: rgba(15, 23, 42, 0.9); color: #94a3b8;">
+                                <th style="padding: 10px;">순위</th>
+                                <th style="padding: 10px;">종목명 (코드)</th>
+                                <th style="padding: 10px;">시장</th>
+                                <th style="padding: 10px;">합성 점수 (백분위)</th>
+                                <th style="padding: 10px;">기준일 종가</th>
+                                <th style="padding: 10px;">[매수 / 차트]</th>
+                            </tr>
+                        </thead>
+                        <tbody id="compositeTopBody">
+                            <tr>
+                                <td colspan="6" style="padding: 20px; color: #64748b;">불러오는 중...</td>
                             </tr>
                         </tbody>
                     </table>

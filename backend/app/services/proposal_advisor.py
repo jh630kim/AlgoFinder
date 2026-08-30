@@ -155,6 +155,33 @@ class ProposalAdvisor:
             self._cs_cache = m
         return self._cs_cache
 
+    def get_composite_top(self, target_date: str, n: int = 10) -> Dict[str, Any]:
+        """신호 판단일 시점, 합성 점수 상위 n종을 반환합니다(신호 유무 무관).
+
+        :param target_date: 기준일 (YYYYMMDD)
+        :param n: 상위 노출 개수
+        :return: {eval_date, signal_date, data:[{rank,code,name,market,composite_pct,close_price}]}
+        """
+        self._load(target_date)
+        if not self._eff_date or not self._signal_date:
+            return {"eval_date": self._eff_date, "signal_date": self._signal_date, "data": []}
+        cmap = self._composite_map()
+        name_map = dict(zip(self._df["symbol"], self._df["name"]))
+        rows = [
+            (rk, sym, pct) for (sym, d), (pct, rk) in cmap.items()
+            if d == self._signal_date and rk is not None
+        ]
+        rows.sort(key=lambda x: x[0])
+        out = []
+        for rk, sym, pct in rows[:n]:
+            px = float(self._eff_close_map.get(sym, 0.0))
+            out.append({
+                "rank": rk, "code": sym, "name": str(name_map.get(sym) or sym),
+                "market": self._market_map.get(sym, ""),
+                "composite_pct": pct, "close_price": int(round(px)),
+            })
+        return {"eval_date": self._eff_date, "signal_date": self._signal_date, "data": out}
+
     def _sell_rows_for(self, key: str, held: set):
         """보유 종목의 신호일 매도 신호 행을 반환합니다(연산량 축소).
 
@@ -253,9 +280,12 @@ class ProposalAdvisor:
             eval_amt = cur * qty
             stock_value += eval_amt
             pnl_pct = ((cur - buy) / buy * 100.0) if buy else 0.0
+            h_pct, h_rank = cmap.get((code, self._eff_date), (None, None))
             enriched.append({
                 **p, "current_price": int(round(cur)), "eval_amount": int(round(eval_amt)),
                 "profit_pct": round(pnl_pct, 2), "profit_krw": int(round((cur - buy) * qty)),
+                "composite_pct": h_pct, "composite_rank": h_rank,
+                "entry_strategy": p.get("entry_strategy"),
             })
 
             badges = list(strat_sells.get(code, []))

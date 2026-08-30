@@ -201,6 +201,7 @@
             }
             if (pf.status === "success") renderKospiRegime(pf.kospi_regime);
             if (rec.status === "success") renderRecommendations(rec.data || []);
+            renderCompositeTop(rec.composite_top || []);
             renderEvalDate(rec.eval_date || pf.eval_date, td);
             renderSignalDate(rec.signal_date || pf.signal_date);
         } catch (e) {
@@ -346,18 +347,23 @@
         const box = $("holdingsBody");
         if (!box) return;
         if (!rows.length) {
-            box.innerHTML = emptyRow(9, "보유 중인 종목이 없습니다. 추천 표에서 [🛒 매수]를 눌러 실제 체결 내역을 기록하세요.");
+            box.innerHTML = emptyRow(10, "보유 중인 종목이 없습니다. 추천 표에서 [🛒 매수]를 눌러 실제 체결 내역을 기록하세요.");
             return;
         }
         box.innerHTML = rows.map((p) => {
             const pc = pnlColor(p.profit_pct);
             const sign = p.profit_pct >= 0 ? "+" : "";
+            // 현재 합성 점수·등수 + 개시 전략
+            const cs = (p.composite_pct != null ? `${p.composite_pct}%` : "-")
+                + (p.composite_rank != null ? ` <span style="color:#94a3b8;font-weight:600;">${p.composite_rank}위</span>` : "");
+            const entry = p.entry_strategy ? ` · 매수: ${p.entry_strategy}` : "";
             if (IS_MOBILE) {
                 return `<div class="mobile-card-item">
                     <div style="display:flex;justify-content:space-between;font-weight:800;color:#fff;margin-bottom:6px;">
                         <span>${p.stock_name} (${p.stock_code})</span><span style="color:${pc}">${sign}${p.profit_pct}%</span></div>
                     <div style="font-size:12px;color:#cbd5e1;">매수 ${won(p.buy_price)} · ${p.quantity}주 · 현재가 ${won(p.current_price)}</div>
-                    <div style="font-size:12px;color:${pc};margin:4px 0 8px;">평가손익 ${sign}${(p.profit_krw).toLocaleString()}원</div>
+                    <div style="font-size:12px;color:${pc};margin:4px 0;">평가손익 ${sign}${(p.profit_krw).toLocaleString()}원</div>
+                    <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">합성 ${cs}${entry}</div>
                     <div style="display:flex;gap:8px;">
                         <button class="btn-sell-action" data-sell='${sellData(p)}' style="flex:1;padding:9px;">🔻 매도</button>
                         <button class="btn-chart-view" data-chart='${p.stock_code}|${p.stock_name}' style="flex:1;padding:9px;">📈 차트</button></div>
@@ -370,9 +376,42 @@
                 <td style="padding:10px;">${p.quantity}주</td>
                 <td style="padding:10px;">${won(p.total_amount)}</td>
                 <td style="padding:10px;">${won(p.current_price)}</td>
+                <td style="padding:10px;color:#38bdf8;font-weight:700;">${cs}${entry ? `<div style="font-size:11px;color:#94a3b8;font-weight:600;">${entry.replace(" · ", "")}</div>` : ""}</td>
                 <td style="padding:10px;color:${pc};font-weight:700;">${sign}${(p.profit_krw).toLocaleString()}원 (${sign}${p.profit_pct}%)</td>
                 <td style="padding:10px;"><button class="btn-sell-action" data-sell='${sellData(p)}'>🔻 매도</button></td>
                 <td style="padding:10px;"><button class="btn-chart-view" data-chart='${p.stock_code}|${p.stock_name}'>📊 차트보기</button></td>
+            </tr>`;
+        }).join("");
+        wireRowButtons(box);
+    }
+
+    function renderCompositeTop(rows) {
+        const box = $("compositeTopBody");
+        if (!box) return;
+        if (!rows.length) {
+            box.innerHTML = emptyRow(6, "합성 점수를 계산할 수 없습니다(데이터 부족).");
+            return;
+        }
+        box.innerHTML = rows.map((r) => {
+            const buyBtn = `<button class="btn-buy-action" data-buy='${r.code}|${r.name}|${r.close_price}|순수관행'>🛒 매수</button>`;
+            if (IS_MOBILE) {
+                return `<div class="mobile-card-item">
+                    <div style="display:flex;justify-content:space-between;font-weight:800;color:#fff;">
+                        <span><span style="color:#fbbf24;">${r.rank}위</span> ${r.name} (${r.code})</span>
+                        <span style="color:#38bdf8;">${r.composite_pct}%</span></div>
+                    <div style="font-size:12px;color:#cbd5e1;margin:4px 0 8px;">${r.market || "-"} · 종가 ${won(r.close_price)}</div>
+                    <div style="display:flex;gap:8px;">${buyBtn}
+                        <button class="btn-chart-view" data-chart='${r.code}|${r.name}' style="flex:1;">📈 차트</button></div>
+                </div>`;
+            }
+            return `<tr>
+                <td style="padding:10px;font-weight:800;color:#fbbf24;">${r.rank}위</td>
+                <td style="padding:10px;font-weight:700;color:#fff;">${r.name} (${r.code})</td>
+                <td style="padding:10px;color:#94a3b8;">${r.market || "-"}</td>
+                <td style="padding:10px;font-weight:800;color:#38bdf8;">${r.composite_pct}%</td>
+                <td style="padding:10px;">${won(r.close_price)}</td>
+                <td style="padding:10px;display:flex;gap:6px;justify-content:center;">${buyBtn}
+                    <button class="btn-chart-view" data-chart='${r.code}|${r.name}'>📊 차트보기</button></td>
             </tr>`;
         }).join("");
         wireRowButtons(box);
