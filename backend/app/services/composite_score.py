@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 FAMILY_WEIGHTS = {"momentum": 1.0, "trend": 1.0, "lowvol": 1.0, "volume": 1.0, "reversal": 0.1}
 PRICE_FLOOR = 1000.0          # 동전주 배제
 MIN_TURNOVER = 3.0e8          # 20일 평균 거래대금 하한(3억)
+MOM_SKIP = 21                 # 모멘텀 최근 1개월 제외
+MOM_LONG = 252               # 12-1개월 모멘텀 룩백(거래일). 이력 부족 구간은 MOM_SHORT 로 폴백
+MOM_SHORT = 126             # 6-1개월 폴백 룩백
 
 
 class CompositeScorer:
@@ -75,10 +78,12 @@ class CompositeScorer:
         ret1 = g["close_price"].pct_change()
         sma60 = g["close_price"].transform(lambda x: x.rolling(60, min_periods=20).mean())
         sma120 = g["close_price"].transform(lambda x: x.rolling(120, min_periods=40).mean())
-        # 모멘텀: 6-1개월 수익률 + 장기선 이격
-        mom_6_1 = g["close_price"].transform(lambda x: x.shift(21) / x.shift(126) - 1.0)
+        # 모멘텀: 12-1개월 수익률(이력 부족 시 6-1개월 폴백) + 장기선 이격
+        mom_long = g["close_price"].transform(lambda x: x.shift(MOM_SKIP) / x.shift(MOM_LONG) - 1.0)
+        mom_short = g["close_price"].transform(lambda x: x.shift(MOM_SKIP) / x.shift(MOM_SHORT) - 1.0)
+        mom_ret = mom_long.fillna(mom_short)
         mom_gap = c / sma120 - 1.0
-        momentum = mom_6_1.fillna(0.0) + mom_gap.fillna(0.0)
+        momentum = mom_ret.fillna(0.0) + mom_gap.fillna(0.0)
         # 추세 품질: 60일 상승마감일 비율
         trend = g["close_price"].transform(
             lambda x: (x.diff() > 0).rolling(60, min_periods=20).mean()

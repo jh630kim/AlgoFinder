@@ -97,36 +97,32 @@ class BaseStrategy(ABC):
 
     def calc_investor_z_score(self, df: pd.DataFrame) -> pd.Series:
         """
-        주체별 수급 모멘텀 Z-Score 연산 헬퍼.
-        기관+외국인 3일 연속 동시 순매수 포착 시 +1.5, 대량 동시 매도시 -1.5 반환.
+        수급 모멘텀 Z-Score 팩터 — **폐기됨(Phase 2)**.
+
+        CI(경량 DB) 수집분은 수급 컬럼이 NULL이라 로컬(수급 有)과 웹(수급 NULL) 사이
+        prob_up 정렬 순서가 어긋났다. 수급 팩터를 완전히 제거해 두 환경 결과를 일치시킨다.
+        메서드는 호출부 호환을 위해 남기되 **항상 0을 반환**한다.
 
         :param df: 주가 및 수급 데이터프레임
-        :return: 수급 Z-Score Series
+        :return: 0.0 으로 채운 Series
         """
-        inst = df['institution_net_buy'].fillna(0.0) if 'institution_net_buy' in df.columns else pd.Series(0.0, index=df.index)
-        foreign = df['foreigner_net_buy'].fillna(0.0) if 'foreigner_net_buy' in df.columns else pd.Series(0.0, index=df.index)
-
-        inst_prev = inst.groupby(df['symbol']).shift(1).fillna(0.0)
-        foreign_prev = foreign.groupby(df['symbol']).shift(1).fillna(0.0)
-
-        dual_buy = (inst > 0) & (foreign > 0) & (inst_prev > 0) & (foreign_prev > 0)
-        dual_sell = (inst < 0) & (foreign < 0) & (inst_prev < 0) & (foreign_prev < 0)
-
-        z_inv = np.where(dual_buy, 1.5, np.where(dual_sell, -1.5, 0.0))
-        return pd.Series(z_inv, index=df.index)
+        return pd.Series(0.0, index=df.index)
 
     def calc_sigmoid_prob(
-        self, z_core: pd.Series, z_investor: pd.Series, signal_bonus: float = 0.0
+        self, z_core: pd.Series, z_investor: pd.Series = None, signal_bonus: float = 0.0
     ) -> pd.Series:
         """
-        시그모이드(Sigmoid) S자 확신 확률(10.0% ~ 90.0%) 변환 연산 엔진.
+        시그모이드(Sigmoid) S자 확신 점수(10.0% ~ 90.0%) 변환 연산 엔진.
+
+        수급 팩터(z_investor) 제거 후 z_core(기술적 지표) 단독으로 산출한다.
+        z_investor 인자는 하위호환용으로 받되 사용하지 않는다.
 
         :param z_core: 핵심 기술적 지표 Z-Score
-        :param z_investor: 수급 모멘텀 Z-Score
+        :param z_investor: (미사용, 하위호환) 옛 수급 모멘텀 Z-Score
         :param signal_bonus: 매수 신호 포착 가산점
         :return: prob_up (10.0% ~ 90.0% 정규화 Series)
         """
-        z_total = (0.6 * z_core.fillna(0.0)) + (0.4 * z_investor.fillna(0.0)) + signal_bonus
+        z_total = z_core.fillna(0.0) + signal_bonus
         prob = 10.0 + (80.0 / (1.0 + np.exp(-0.8 * z_total)))
         prob = np.nan_to_num(prob, nan=50.0)
         return np.round(np.clip(prob, 10.0, 90.0), 1)
