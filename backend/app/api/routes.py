@@ -22,8 +22,9 @@ sync_status = {
 
 
 def _run_sync_job() -> None:
-    """백그라운드 스레드에서 타깃 종목 수급/OHLCV 증분 수집을 실행하고 sync_status를 갱신합니다."""
+    """백그라운드 스레드에서 지수/환율(Stage 2) + 타깃 종목 수급/OHLCV(Stage 3) 증분 수집을 실행하고 sync_status를 갱신합니다."""
     from backend.app.services.market_data_collector import MarketDataCollector
+    from backend.app.services.market_indices_collector import MarketIndicesCollector
 
     session = next(db_manager.get_session())
     try:
@@ -32,12 +33,18 @@ def _run_sync_job() -> None:
             sync_status["total"] = total
             sync_status["message"] = f"[{done}/{total}] {msg}"
 
+        # 1) 지수·환율(KOSPI, KOSDAQ, S&P500, USD/KRW) 증분 — 합성 점수·국면·백테스트가 사용
+        sync_status["message"] = "지수·환율 수집 중..."
+        idx_res = MarketIndicesCollector(session).collect_market_indices(incremental=True)
+
+        # 2) 타깃 종목 수급/OHLCV 증분 (진행바)
         result = MarketDataCollector(session).collect_target_market_data(
             incremental=True, progress_callback=_cb
         )
+        idx_note = "지수 최신" if idx_res.get("skipped") else f"지수 {idx_res.get('saved_count', 0)}건"
         sync_status["status"] = "completed"
         sync_status["message"] = (
-            f"동기화 완료 (적재 {result.get('total_records_saved', 0)}건, "
+            f"동기화 완료 ({idx_note}, 종목 적재 {result.get('total_records_saved', 0)}건, "
             f"건너뜀 {result.get('skipped_symbols_count', 0)}종목)"
         )
     except Exception as exc:
