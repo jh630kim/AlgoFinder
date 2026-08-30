@@ -9,8 +9,9 @@
   3) VACUUM 후 결과 보고
 
 CI(GitHub Actions)는 KRX 로그인·네이버 스크래핑이 막혀 있으므로 `ohlcv-only`로만 수집한다.
-수집이 실패하거나 새 거래일이 하나도 안 들어오면 **비정상 종료(exit code 1)** 한다 —
+수집이 실패하거나, 새 거래일도 없고 최신일 결손 백필(행 수 증가)도 없으면 **비정상 종료(exit 1)** 한다 —
 워크플로가 이를 감지해 Release 업로드·재배포를 건너뛰고 Discord 경고를 보낸다.
+(같은 날짜라도 종목이 채워지면 행 수가 늘어나므로 업로드·재배포가 진행된다.)
 
 사용법:
     python deploy/roll_lite_db.py [--db data/app_lite.db] [--days 730]
@@ -23,12 +24,13 @@ import sys
 from datetime import datetime, timedelta
 
 
-def _max_investor_date(db: str) -> str:
-    """investor_trading_daily 의 최신 날짜(YYYYMMDD)를 반환합니다(없으면 '')."""
+def _investor_stats(db: str) -> tuple:
+    """(최신 날짜 YYYYMMDD 또는 '', investor_trading_daily 전체 행 수)를 반환합니다."""
     conn = sqlite3.connect(db)
     try:
-        row = conn.execute("SELECT max(date) FROM investor_trading_daily").fetchone()
-        return row[0] if row and row[0] else ""
+        d = conn.execute("SELECT max(date) FROM investor_trading_daily").fetchone()[0] or ""
+        n = conn.execute("SELECT count(*) FROM investor_trading_daily").fetchone()[0]
+        return d, n
     finally:
         conn.close()
 
@@ -71,21 +73,23 @@ def main() -> None:
     os.environ["DATABASE_URL"] = f"sqlite:///./{args.db.replace(os.sep, '/')}"
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-    before_max = _max_investor_date(args.db)
-    print(f"증분 수집 시작 (mode=incremental, stage=ohlcv-only) ... 현재 최신일 {before_max or '(없음)'}")
+    before_max, before_cnt = _investor_stats(args.db)
+    print(f"증분 수집 시작 (mode=incremental, stage=ohlcv-only) ... "
+          f"현재 최신일 {before_max or '(없음)'}, 행 {before_cnt:,}")
     try:
         from run_data_collection import run_pipeline
         run_pipeline(mode="incremental", stage="ohlcv-only")
     except Exception as exc:  # noqa: BLE001 - 수집 실패 시 비정상 종료로 워크플로에 알림
         raise SystemExit(f"⚠️ 증분 수집 중 예외 발생 — 롤링 중단: {exc}")
 
-    after_max = _max_investor_date(args.db)
-    if not after_max or after_max <= before_max:
+    after_max, after_cnt = _investor_stats(args.db)
+    # 새 거래일 OR 최신일 결손 백필(행 수 증가) 둘 중 하나라도 있으면 진행.
+    if not after_max or (after_max <= before_max and after_cnt <= before_cnt):
         raise SystemExit(
-            f"⚠️ 새 거래일이 수집되지 않았습니다 (최신일 {before_max or '없음'} → {after_max or '없음'}). "
-            f"롤링 중단 — 기존 Release 자산 보존."
+            f"⚠️ 신규/백필 데이터가 없습니다 (최신일 {before_max or '없음'} → {after_max or '없음'}, "
+            f"행 {before_cnt:,} → {after_cnt:,}). 롤링 중단 — 기존 Release 자산 보존."
         )
-    print(f"신규 거래일 확인: {before_max or '없음'} → {after_max}")
+    print(f"신규/백필 확인: 최신일 {before_max or '없음'} → {after_max}, 행 {before_cnt:,} → {after_cnt:,}")
 
     print(f"롤링 프루닝 ({args.days}일) ...")
     cutoff = _prune(args.db, args.days)

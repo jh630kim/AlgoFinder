@@ -5,8 +5,9 @@ name: roll-lite-db
 # app_lite.db 를 업로드해 두어야 한다.
 #
 # CI는 KRX 로그인·네이버 스크래핑이 막혀 있으므로 `roll_lite_db.py`가 `stage=ohlcv-only`로만 수집한다
-# (지수 FDR + 타깃 OHLCV FDR, 수급 컬럼 NULL). 수집이 실패하거나 새 거래일이 없으면 스크립트가
-# 비정상 종료하고, 이후 Release 업로드·재배포는 건너뛰며 Discord로 경고를 보낸다.
+# (지수 FDR + 타깃 OHLCV FDR, 수급 컬럼 NULL). 수집이 실패하거나, 새 거래일도 없고 최신일 결손
+# 백필(행 수 증가)도 없으면 스크립트가 비정상 종료하고, 이후 Release 업로드·재배포는 건너뛰며
+# Discord로 경고를 보낸다.
 
 on:
   schedule:
