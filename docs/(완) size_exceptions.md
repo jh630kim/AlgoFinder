@@ -9,7 +9,7 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
 - (2026-08-29) `get_stock_chart_data`에 `end_date`(기준일) 선택 인자 추가 —
   보조 차트를 화면 기준일까지만 그리기 위한 끝 날짜 제한. 미지정 시 기존과 동일. 약 380 → 393줄.
 
-## backend/app/api/routes_paper.py (<span style="color:red">593줄</span>)
+## backend/app/api/routes_paper.py (<span style="color:red">612줄</span>)
 - 모의투자/투자제안 계좌유형(`account_type`)별 자산 관리 API(backtest, portfolio, reset,
   manual-buy, sell, stock-info, recommended-stocks 등)가 하나의 Blueprint(`paper_api_bp`)에
   묶여 있어 엔드포인트 수만큼 길어짐.
@@ -25,10 +25,13 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
 - (2026-08-29) 디스코드 전달(`notify-recommendations`), 가상매매 JSON
   `export`/`import` 엔드포인트, paper 라우트 5개의 (메인/psession) 2세션 분리(`_paper_session`
   헬퍼). 약 457 → 549줄.
-- <span style="color:red">(2026-08-29) `sync-turso` 엔드포인트(로컬↔Turso HTTP 동기화, push/pull).
-  약 549 → 593줄. 실제 HTTP·SQL 로직은 `services/turso_http_client.py`(신규, 171줄)로 위임.</span>
+- (2026-08-29) `sync-turso` 엔드포인트(로컬↔Turso HTTP 동기화, push/pull).
+  약 549 → 593줄. 실제 HTTP·SQL 로직은 `services/turso_http_client.py`(신규, 171줄)로 위임.
+- <span style="color:red">(2026-08-30 Phase 1·2) `backtest_run` 재연산 대상을 combo_id 리스트로 축소(S1b/S1c 폐기) +
+  순수관행 엔트리(combo_id=22) 실행 호출, `max_slots` 5, `manual-buy`에 `entry_strategy` 태그 저장.
+  약 593 → 612줄.</span>
 
-## backend/app/services/proposal_advisor.py (254줄)
+## backend/app/services/proposal_advisor.py (<span style="color:red">285줄</span>)
 - 투자제안/모의투자 화면 데이터 조립(추천·매도신호·포트폴리오 평가)을 담당하는
   단일 클래스 `ProposalAdvisor`. 메서드 개수(로딩·지표캐시·추천·매도행·포트폴리오뷰)만큼 길어짐.
 - (2026-08-28) 모의투자용 D-1 판단 모드(`mode`/`_signal_offset`/`_signal_date`/
@@ -36,8 +39,11 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
 - (2026-08-29) 성능 A+C: 기준일마다 재로딩하던 것을 넓은 창(워밍업+FORWARD)
   1회 로드·1회 지표 계산 후 창 내 슬라이스로 처리하도록 `_load` 재구성 + `_covers`/`_resolve_dates`
   헬퍼 추가. 약 211 → 254줄. 캐시 키는 `(모드, 데이터버전)`으로 축소(`proposal_advisor_cache.py`).
+- <span style="color:red">(2026-08-30 Phase 2) `_composite_map` 헬퍼(합성 점수 창 캐시) 추가, `get_recommendations`가
+  합성 점수순 정렬·전략별 top_n 제한·`composite_pct/rank` 노출, `build_portfolio_view` 매도 시그널에
+  `entry_strategy`+합성 점수 병기. 약 254 → 285줄.</span>
 
-## backend/app/services/backtest_engine.py (413줄)
+## backend/app/services/backtest_engine.py (<span style="color:red">462줄</span>)
 - `BacktestEngine._simulate_trading` 메서드가 슬롯 관리·매수/매도 조건·보유 종목 갱신이 서로
   얽힌 단일 시뮬레이션 알고리즘이라 응집도가 높아 분리 시 로직 추적이 어려워짐.
 - (2026-08-27) 성능 개선으로 `load_market_dataframe` 기간 제한(워밍업 버퍼) + 전략별 지표/딕셔너리
@@ -45,12 +51,22 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
   추가되어 약 60줄 증가. `load_market_dataframe`은 기간 버퍼 계산·캐시 무효화 처리로 약 40줄(30줄 초과).
 - (2026-08-29) `load_market_dataframe`에 `warmup_days` 선택 인자 추가(기본 200,
   기존 호출부 불변). ProposalAdvisor가 창 시작에 워밍업을 이미 반영하고 `warmup_days=0`으로 호출.
+- <span style="color:red">(2026-08-30 Phase 1·2) `_simulate_trading` 청산 판정에 -5%/+10% 추가, 매수 후보 정렬을
+  합성 점수로(`_get_composite_map` 헬퍼 추가), STOP/TARGET 상수 정의, S1b/S1c 제거. 약 417 → 462줄.</span>
 
-## backend/app/services/market_data_collector.py (342줄)
+## backend/app/services/purerule_engine.py (<span style="color:red">206줄</span>)
+- <span style="color:red">순수관행 백테스트 엔트리(combo_id=22) 전담 클래스 `PureRuleEngine`. 합성 점수 로드 →
+  주간(ISO week) 리밸런싱 · 균등비중 top-5 · ATR 하드스톱 · 랭킹 이탈 · 최대 보유일 청산 →
+  strategy_trade_logs 스키마로 매매일지 조립까지, 하나의 시뮬레이션 알고리즘이 응집되어 있어
+  분리 시 추적이 어려움. 200줄 기준 6줄 초과(정적 헬퍼 6개로 이미 분할). 후속 축소 대상.</span>
+
+## backend/app/services/market_data_collector.py (<span style="color:red">349줄</span>)
 - PyKRX/FinanceDataReader/Naver 등 복수 외부 데이터 소스에 대한 재시도·폴백 로직을 포함한
   수집 파이프라인이라, 외부 연동 특유의 예외 처리 분기가 많아 줄 수가 늘어남.
 - (2026-08-27) `collect_target_market_data`에 웹 진행바용 `progress_callback` 선택 인자 및
   종목 루프 내 호출부가 추가되어 약 5줄 증가.
+- <span style="color:red">(2026-08-30 Phase 0) `collect_target_market_data(ohlcv_only=)` 분기 —
+  네이버/KRX 수급 스크래핑 없이 FDR OHLCV 폴백을 정식 경로로(CI용). 약 342 → 349줄.</span>
 
 ---
-위 5개 파일은 현재 구조 유지를 제안드립니다. 특정 파일을 실제로 분리하길 원하시면 말씀해 주세요.
+위 <span style="color:red">6개</span> 파일은 현재 구조 유지를 제안드립니다. 특정 파일을 실제로 분리하길 원하시면 말씀해 주세요.

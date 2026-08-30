@@ -386,11 +386,19 @@
             return;
         }
         box.innerHTML = rows.map((r) => {
+            // 개시 전략 + 현재 합성 점수·등수
+            const meta = [
+                r.entry_strategy ? `매수: ${r.entry_strategy}` : null,
+                r.composite_pct != null ? `합성 ${r.composite_pct}%` : null,
+                r.composite_rank != null ? `${r.composite_rank}위` : null,
+            ].filter(Boolean).join(" · ");
+            const metaLine = meta ? `<div style="font-size:11px;color:#94a3b8;margin-top:3px;">${meta}</div>` : "";
             if (IS_MOBILE) {
                 return `<div class="mobile-card-item" style="border-color:rgba(239,68,68,0.4);">
                     <div style="font-weight:800;color:#f87171;">${r.name} (${r.code})</div>
                     <div style="font-size:12px;color:#fca5a5;margin:4px 0;">${r.badges.join(" · ")}</div>
                     <div style="font-size:12px;color:#cbd5e1;">🚨 ${r.reason}</div>
+                    ${metaLine}
                     <div style="font-size:12px;color:#94a3b8;margin:4px 0 8px;">${r.quantity}주 · 매수 ${won(r.buy_price)} · 현재 ${won(r.current_price)}</div>
                     <button class="btn-sell-action" data-sell='${sellData({stock_code:r.code,stock_name:r.name,quantity:r.quantity,current_price:r.current_price})}' style="width:100%;padding:9px;">🔻 매도 기록</button>
                 </div>`;
@@ -401,7 +409,7 @@
                 <td style="padding:10px;">${won(r.buy_price)}</td>
                 <td style="padding:10px;">${won(r.current_price)}</td>
                 <td style="padding:10px;color:#f87171;font-weight:700;">${r.badges.join(", ")}</td>
-                <td style="padding:10px;text-align:left;color:#fca5a5;">🚨 ${r.reason}</td>
+                <td style="padding:10px;text-align:left;color:#fca5a5;">🚨 ${r.reason}${metaLine}</td>
             </tr>`;
         }).join("");
         wireRowButtons(box);
@@ -415,11 +423,14 @@
             return;
         }
         box.innerHTML = rows.map((r) => {
-            const buyBtn = `<button class="btn-buy-action" data-buy='${r.code}|${r.name}|${r.close_price}'>🛒 매수</button>`;
+            const buyBtn = `<button class="btn-buy-action" data-buy='${r.code}|${r.name}|${r.close_price}|${r.strategy || ""}'>🛒 매수</button>`;
+            // 합성 점수(백분위) + 등수 표기
+            const score = (r.prob_up != null ? `${r.prob_up}%` : "-")
+                + (r.composite_rank != null ? ` <span style="color:#94a3b8;font-weight:600;">${r.composite_rank}위</span>` : "");
             if (IS_MOBILE) {
                 return `<div class="mobile-card-item">
                     <div style="display:flex;justify-content:space-between;font-weight:800;color:#fff;">
-                        <span>${r.name} (${r.code})</span><span style="color:#38bdf8;">${r.prob_up}%</span></div>
+                        <span>${r.name} (${r.code})</span><span style="color:#38bdf8;">${score}</span></div>
                     <div style="font-size:12px;color:#fbbf24;margin:4px 0;">${r.strategy_name}</div>
                     <div style="font-size:12px;color:#cbd5e1;margin-bottom:8px;">추천가 ${won(r.close_price)} · 💡 ${r.reason}</div>
                     <div style="display:flex;gap:8px;">${buyBtn}
@@ -429,7 +440,7 @@
             return `<tr>
                 <td style="padding:10px;font-weight:700;color:#fff;">${r.name} (${r.code})</td>
                 <td style="padding:10px;color:#94a3b8;">${r.market || "-"}</td>
-                <td style="padding:10px;font-weight:800;color:#38bdf8;">${r.prob_up}%</td>
+                <td style="padding:10px;font-weight:800;color:#38bdf8;">${score}</td>
                 <td style="padding:10px;font-weight:700;color:#fff;">${won(r.close_price)}</td>
                 <td style="padding:10px;color:#fbbf24;">${r.strategy_name}</td>
                 <td style="padding:10px;text-align:left;color:#cbd5e1;">💡 ${r.reason}</td>
@@ -454,8 +465,8 @@
     function wireRowButtons(box) {
         box.querySelectorAll("[data-buy]").forEach((b) =>
             b.addEventListener("click", () => {
-                const [code, name, price] = b.getAttribute("data-buy").split("|");
-                openBuyModal({ code, name, price });
+                const [code, name, price, strategy] = b.getAttribute("data-buy").split("|");
+                openBuyModal({ code, name, price, strategy });
             }));
         box.querySelectorAll("[data-sell]").forEach((b) =>
             b.addEventListener("click", () => openSellModal(JSON.parse(b.getAttribute("data-sell").replace(/&#39;/g, "'")))));
@@ -469,9 +480,11 @@
     }
 
     // ── 매수 모달 ─────────────────────────────────────────────
+    let buyStrategy = "";  // 추천 카드에서 매수 시 개시 전략 태그(없으면 MANUAL)
     function openBuyModal(prefill) {
         const m = $("manualBuyModal");
         if (!m) return;
+        buyStrategy = (prefill && prefill.strategy) ? prefill.strategy : "";
         const price = prefill ? Number(prefill.price) || 0 : 0;
         $("inputStockCode").value = prefill ? prefill.code : "";
         $("inputBuyPrice").value = prefill ? prefill.price : "";
@@ -525,6 +538,7 @@
             buy_price: Number($("inputBuyPrice").value),
             quantity: parseInt($("inputBuyQty").value, 10),
             buy_date: $("inputBuyDate").value,
+            strategy: buyStrategy || "MANUAL",
         };
         const res = await fetch("/api/paper-trading/manual-buy", {
             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
