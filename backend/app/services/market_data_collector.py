@@ -36,23 +36,37 @@ class MarketDataCollector:
         self.sync_log_repo = SyncLogRepository(session)
         self.master_repo = StockMasterRepository(session)
 
-    def _fetch_fdr_fallback(self, symbol: str, start_date: str, end_date: str, reason: str) -> List[Dict[str, Any]]:
+    def _fetch_fdr_fallback(self, symbol: str, start_date: str, end_date: str, reason: str,
+                            retries: int = 3) -> List[Dict[str, Any]]:
         """
-        FinanceDataReader(FDR)를 활용해 OHLCV 시세를 수집하고 수급 필드는 NULL(None)로 처리합니다.
+        FinanceDataReader(FDR)로 OHLCV 시세를 수집하고 수급 필드는 NULL(None)로 처리합니다.
+
+        GitHub Actions IP에서 FDR(네이버) 호출이 간헐적으로 rate-limit/타임아웃 되므로
+        빈 결과·예외 시 짧은 백오프로 최대 `retries`회 재시도한다.
 
         :param symbol: 종목코드
         :param start_date: 시작일자 (YYYYMMDD)
         :param end_date: 종료일자 (YYYYMMDD)
         :param reason: 폴백 사유
-        :return: 데이터 딕셔너리 리스트
+        :param retries: 최대 시도 횟수 (기본 3)
+        :return: 데이터 딕셔너리 리스트 (모두 실패 시 [])
         """
+        import FinanceDataReader as fdr
+        logger.info(f"  └─ ➔ [{symbol}] {reason} — FDR OHLCV 수집 (수급 NULL)")
+        df = None
+        for attempt in range(1, retries + 1):
+            try:
+                df = fdr.DataReader(symbol, start_date, end_date)
+                if df is not None and not df.empty:
+                    break
+            except Exception as exc:  # noqa: BLE001 - 네트워크 계열 예외는 재시도로 흡수
+                logger.warning(f"[{symbol}] FDR 시도 {attempt}/{retries} 실패: {exc}")
+            if attempt < retries:
+                time.sleep(0.8 * attempt)  # 0.8s, 1.6s 백오프
+        if df is None or df.empty:
+            logger.error(f"[{symbol}] FDR {retries}회 시도 모두 빈 결과 — 스킵")
+            return []
         try:
-            import FinanceDataReader as fdr
-            logger.info(f"  └─ ➔ [{symbol}] {reason} ➔ FinanceDataReader(FDR) 2차 폴백으로 OHLCV 시세 수집 (수급 필드 NULL 처리)")
-            df = fdr.DataReader(symbol, start_date, end_date)
-            if df is None or df.empty:
-                return []
-
             records = []
             for idx_dt, row in df.iterrows():
                 d_str = idx_dt.strftime("%Y%m%d")
