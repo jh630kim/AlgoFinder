@@ -11,6 +11,7 @@ AlgoFinder Flask 웹 백엔드 메인 애플리케이션 (app.py).
 
 import os
 import sys
+import threading
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from dotenv import load_dotenv
 
@@ -59,6 +60,41 @@ db_manager.create_all_tables()
 # API 블루프린트 등록
 app.register_blueprint(api_bp)
 app.register_blueprint(paper_api_bp)
+
+
+def _warm_proposal_cache() -> None:
+    """배포/기동 직후 첫 방문자가 전체 워밍업 비용을 페이지 로드 중에 부담하지 않도록,
+    최신 거래일 기준 투자제안(advice) 추천 캐시를 백그라운드 스레드에서 미리 채운다.
+
+    ProposalAdvisorCache 는 프로세스 전역 캐시이므로, 이 예열이 끝나면 이후 같은
+    거래일에 대한 /api/recommended-stocks 요청은 재로딩 없이 창 슬라이스만 수행한다.
+    데이터가 없거나 예열이 실패해도 서비스 기동에는 영향을 주지 않는다(로그만 남김).
+    """
+    try:
+        from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
+
+        session = next(db_manager.get_session())
+        try:
+            latest = ProposalAdvisorCache.data_version(session)
+            if not latest:
+                return
+            advisor = ProposalAdvisorCache.get(session, latest, "advice")
+            # 추천 표와 순수관행 합성 랭킹까지 조립해 실제 요청 경로와 동일하게 예열한다.
+            advisor.get_recommendations(latest)
+            advisor.get_composite_top(latest, n=10)
+        finally:
+            session.close()
+        safe_print(f"[warm] 투자제안 추천 캐시 예열 완료 (기준일 {latest})")
+    except Exception as exc:  # 예열 실패는 무시하고 기동을 계속한다
+        safe_print(f"[warm] 추천 캐시 예열 실패(무시): {exc}")
+
+
+# 개발 리로더의 부모 프로세스에서 중복 실행하지 않도록, 디버그 모드에서는
+# 실제 서빙 자식 프로세스(WERKZEUG_RUN_MAIN=true)에서만 예열한다.
+# gunicorn(FLASK_DEBUG=False)에서는 워커 import 시 1회 실행된다.
+_DEBUG_MODE = os.getenv("FLASK_DEBUG", "True").lower() == "true"
+if (not _DEBUG_MODE) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    threading.Thread(target=_warm_proposal_cache, name="warm-proposal", daemon=True).start()
 
 # web 프로필: PC 전용 페이지는 투자제안 모바일로 리다이렉트
 _WEB_REDIRECT_PAGES = {"/", "/backtest", "/recommendation", "/proposal"}

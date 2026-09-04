@@ -17,6 +17,10 @@
     // 모의투자 계좌는 D-1 신호 모드, 투자제안은 기존 D-0 모드
     const MODE = ACCOUNT === "rec" ? "sim" : "advice";
     const IS_MOBILE = !!window.PROPOSAL_MOBILE;
+    // 투자제안(advice) 화면에서 진입 시점의 최신 거래일(SSR 주입값)을 기억한다.
+    // 사용자가 이 값과 다른 날짜를 고르면, 조회 버튼을 누르기 전까지는 자동 조회하지 않고
+    // "조회를 누르면 이 날짜로 계산합니다" 안내만 띄운다.
+    let latestDate = "";
     let sellTargetCode = null;
     let sellMaxQty = 0;
     let proposalChart = null;
@@ -58,6 +62,13 @@
         }
         if (dp && !dp.value) dp.value = new Date().toISOString().slice(0, 10);
 
+        // advice 화면: 진입 시점 날짜(=SSR 최신 거래일)를 기준으로 기억하고,
+        // 날짜가 바뀔 때마다 지연 안내를 토글한다.
+        if (MODE === "advice" && dp) {
+            latestDate = dp.value || "";
+            dp.addEventListener("change", updateDeferHint);
+        }
+
         bindClick("btnFetchRec", refresh);
         bindClick("btnNextDayRec", nextDay);
         bindClick("btnNotifyRecommendations", notifyRecommendations);
@@ -95,6 +106,27 @@
     function targetDate() {
         const dp = $("recTargetDate");
         return dp && dp.value ? dp.value : new Date().toISOString().slice(0, 10);
+    }
+
+    // advice 화면 전용: 선택 날짜가 최신 거래일과 다르면 "조회를 눌러야 계산된다"는
+    // 안내를 조회 버튼 옆에 표시한다. 같아지거나 조회가 끝나면 감춘다.
+    function updateDeferHint() {
+        if (MODE !== "advice") return;
+        const btn = $("btnFetchRec");
+        if (!btn) return;
+        let hint = $("deferHint");
+        if (!hint) {
+            hint = document.createElement("span");
+            hint.id = "deferHint";
+            hint.style.cssText =
+                "margin-left:8px;color:#f59e0b;font-size:12.5px;font-weight:700;display:none;";
+            btn.insertAdjacentElement("afterend", hint);
+        }
+        const stale = !!latestDate && targetDate() !== latestDate;
+        hint.textContent = stale
+            ? `🔍 조회를 누르면 ${targetDate()} 기준으로 계산합니다`
+            : "";
+        hint.style.display = stale ? "" : "none";
     }
 
     // ── 진행 중 로딩 오버레이 ──────────────────────────────────
@@ -184,6 +216,9 @@
     async function refresh() {
         const td = targetDate();
         rememberTargetDate(td);
+        // 이번 조회로 화면 데이터가 선택 날짜와 일치하게 되므로 지연 안내를 갱신 기준으로 삼는다.
+        latestDate = td;
+        updateDeferHint();
         showLoading();
         try {
             const [pf, rec] = await Promise.all([

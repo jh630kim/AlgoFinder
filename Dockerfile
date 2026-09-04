@@ -31,4 +31,6 @@ ENV APP_PROFILE=web \
 EXPOSE 8000
 
 # Koyeb이 $PORT를 주입한다. gunicorn으로 app:app 구동.
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120 app:app"]
+# 워커 1개 + 스레드 4: 무료 인스턴스 메모리를 아끼고(추천 캐시·창 데이터 1벌),
+# 부팅 시 추천 캐시 예열도 1회만 수행한다. 스레드로 I/O 대기 중 요청 하드블록만 완화.
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 1 --threads 4 --timeout 120 app:app"]

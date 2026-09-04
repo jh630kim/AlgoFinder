@@ -132,7 +132,9 @@ class PureRuleEngine:
                     continue
                 cash -= sh * c
                 _, cpct = rank.get((sym, pd_), (None, 50.0))
-                pos[sym] = {"sh": sh, "buy": c, "hold": 0, "pct": float(cpct or 50.0),
+                # 합성 백분위가 결측(pd.NA)일 수 있어 bool 평가 전에 명시적으로 검사한다.
+                pct_val = float(cpct) if pd.notna(cpct) else 50.0
+                pos[sym] = {"sh": sh, "buy": c, "hold": 0, "pct": pct_val,
                             "name": self._name(scored, sym)}
                 logs.append(self._log(d, sym, pos[sym], "BUY", c, cap0, cash, pos, px, "랭킹편입"))
             eqv = cash + sum(q["sh"] * float(px.get((s, d), {}).get("close_price", q["buy"]))
@@ -156,8 +158,18 @@ class PureRuleEngine:
         a = atr.get((sym, sig_d))
         if a and c <= p["buy"] - ATR_MULT * a:
             return "하드스톱"
-        rk, _ = rank.get((sym, sig_d), (None, None))
-        if rk is not None and rk > 2 * n_slots:
+        _MISSING = object()
+        rk, _ = rank.get((sym, sig_d), (_MISSING, None))
+        # composite_rank 는 Int64(nullable)이라 부적격 행은 pd.NA 로 담긴다. NA 를 bool 로
+        # 평가하면 TypeError 가 나므로 경우를 명시적으로 나눈다.
+        #  - 키 자체가 없음(_MISSING): 그날 시세가 없어 판정 불가 → 보유 유지
+        #  - 랭킹이 pd.NA: 적격 이탈 → 랭킹이탈로 청산
+        #  - 정상 정수: 상위 2N 밖이면 랭킹이탈
+        if rk is _MISSING:
+            pass
+        elif pd.isna(rk):
+            return "랭킹이탈"
+        elif rk > 2 * n_slots:
             return "랭킹이탈"
         if p["hold"] >= MAX_HOLD_DAYS:
             return "최대보유일"

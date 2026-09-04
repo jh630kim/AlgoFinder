@@ -102,6 +102,9 @@ def backtest_run():
 
         combo_ids = [1, 2, 5, 6, 7, 8]
         total_steps = len(combo_ids) + 1  # + 순수관행 엔트리
+        # 개별 조합/엔트리가 실패해도 전체 재연산은 계속하되, 실패 항목을 모아
+        # 백테스트 종료 시 진행 메시지·응답에 함께 보고한다(조용한 실패 방지).
+        failed_entries = []
         engine = BacktestEngine(session)
         for i, c_id in enumerate(combo_ids, 1):
             try:
@@ -114,7 +117,9 @@ def backtest_run():
                     target_sectors=["KOSPI 200", "KOSDAQ 150"]
                 )
             except Exception as e:
-                logger.error(f"Combo {c_id} 오류: {e}")
+                # 트레이스백을 남기고 실패 목록에 담는다(해당 조합만 건너뜀).
+                logger.exception(f"Combo {c_id} 오류: {e}")
+                failed_entries.append(f"조합 {c_id}")
             BACKTEST_PROGRESS["completed"] = i
             BACKTEST_PROGRESS["message"] = f"전략 조합 {i}/{total_steps} 연산 완료..."
 
@@ -127,7 +132,9 @@ def backtest_run():
                 target_sectors=["KOSPI 200", "KOSDAQ 150"],
             )
         except Exception as e:
-            logger.error(f"순수관행 엔트리 오류: {e}")
+            # 트레이스백을 남기고 실패 목록에 담는다(순수관행 엔트리만 건너뜀).
+            logger.exception(f"순수관행 엔트리 오류: {e}")
+            failed_entries.append("순수관행 엔트리(combo_id=22)")
         BACKTEST_PROGRESS["completed"] = total_steps
         BACKTEST_PROGRESS["message"] = f"전략 조합 {total_steps}/{total_steps} 연산 완료..."
 
@@ -137,6 +144,12 @@ def backtest_run():
         _write_render_cache(payload)
 
         BACKTEST_PROGRESS["status"] = "completed"
+        if failed_entries:
+            # 부분 실패: 상태는 completed 로 두되, 실패 항목을 진행 메시지와 응답에 남겨
+            # 사용자가 어떤 조합/엔트리가 빠졌는지 알 수 있게 한다.
+            fail_msg = f"백테스트 완료 — 실패 {len(failed_entries)}건: {', '.join(failed_entries)}"
+            BACKTEST_PROGRESS["message"] = fail_msg
+            return jsonify({"status": "success", "message": fail_msg, "failed": failed_entries})
         BACKTEST_PROGRESS["message"] = "백테스트 완료"
         return jsonify({"status": "success", "message": "백테스트가 성공적으로 완료되었습니다."})
     except Exception as e:
