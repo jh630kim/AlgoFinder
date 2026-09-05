@@ -39,14 +39,15 @@ class MarketIndicesCollector:
         :param end_date: 종료일자 (YYYYMMDD)
         :return: 일자별 지수/환율 딕셔너리 리스트
         """
-        # FinanceDataReader 는 웹 서빙(requirements-web) 대상이 아니라 지연 import 한다.
-        import FinanceDataReader as fdr
+        # read_fdr 는 fdr.DataReader 에 강제 타임아웃(기본 12초)을 씌워, 응답 없는
+        # 호출이 무한 대기하지 않게 한다. 타임아웃은 TimeoutError 로 아래 except 에서 처리.
+        from backend.app.services.fdr_safe import read_fdr
 
         try:
-            kospi_df = fdr.DataReader("KS11", start_date, end_date)
-            kosdaq_df = fdr.DataReader("KQ11", start_date, end_date)
-            sp500_df = fdr.DataReader("US500", start_date, end_date)
-            usdkrw_df = fdr.DataReader("USD/KRW", start_date, end_date)
+            kospi_df = read_fdr("KS11", start_date, end_date)
+            kosdaq_df = read_fdr("KQ11", start_date, end_date)
+            sp500_df = read_fdr("US500", start_date, end_date)
+            usdkrw_df = read_fdr("USD/KRW", start_date, end_date)
 
             if kospi_df.empty:
                 return []

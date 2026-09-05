@@ -22,6 +22,7 @@ permissions:
 jobs:
   roll:
     runs-on: ubuntu-latest
+    timeout-minutes: 30            # job 바깥 상한 (기본 360분 → 30분)
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +51,8 @@ jobs:
       - name: Roll (ohlcv-only incremental collect + prune)
         # FDR 지수 + 타깃 OHLCV만 증분 수집(수급 NULL) 후 730일 밖 프루닝/VACUUM.
         # 수집 실패·신규 거래일 없음이면 스크립트가 exit 1 → 이후 Release 업로드·재배포 스텝 건너뜀.
+        # 스텝 타임아웃 20분: FDR 정체로 멈춰도 여기서 끊고, 아래 커버리지 리포트(if: always())는 실행된다.
+        timeout-minutes: 20
         run: python deploy/roll_lite_db.py
 
       - name: Upload lite DB to Release

@@ -42,7 +42,8 @@ class MarketDataCollector:
         FinanceDataReader(FDR)로 OHLCV 시세를 수집하고 수급 필드는 NULL(None)로 처리합니다.
 
         GitHub Actions IP에서 FDR(네이버) 호출이 간헐적으로 rate-limit/타임아웃 되므로
-        빈 결과·예외 시 짧은 백오프로 최대 `retries`회 재시도한다.
+        빈 결과·예외 시 짧은 백오프로 최대 `retries`회 재시도한다. 각 시도는 `read_fdr`
+        가 강제 타임아웃(기본 12초)을 걸어, 응답 없는 호출이 무한 대기하지 않게 한다.
 
         :param symbol: 종목코드
         :param start_date: 시작일자 (YYYYMMDD)
@@ -51,15 +52,15 @@ class MarketDataCollector:
         :param retries: 최대 시도 횟수 (기본 3)
         :return: 데이터 딕셔너리 리스트 (모두 실패 시 [])
         """
-        import FinanceDataReader as fdr
+        from backend.app.services.fdr_safe import read_fdr
         logger.info(f"  └─ ➔ [{symbol}] {reason} — FDR OHLCV 수집 (수급 NULL)")
         df = None
         for attempt in range(1, retries + 1):
             try:
-                df = fdr.DataReader(symbol, start_date, end_date)
+                df = read_fdr(symbol, start_date, end_date)
                 if df is not None and not df.empty:
                     break
-            except Exception as exc:  # noqa: BLE001 - 네트워크 계열 예외는 재시도로 흡수
+            except Exception as exc:  # noqa: BLE001 - 타임아웃·네트워크 예외는 재시도로 흡수
                 logger.warning(f"[{symbol}] FDR 시도 {attempt}/{retries} 실패: {exc}")
             if attempt < retries:
                 time.sleep(0.8 * attempt)  # 0.8s, 1.6s 백오프

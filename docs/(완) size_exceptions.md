@@ -2,12 +2,12 @@
 
 CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입니다. 사용자 검토 대상입니다.
 
-## <span style="color:red">app.py (244줄)</span>
-- <span style="color:red">Flask 앱 팩토리 단일 진입점 — 앱 생성·블루프린트 등록·5개 페이지 라우트·프로필/읽기전용
-  게이트·SSR 주입 헬퍼가 한 파일에 모임. 라우트 함수 자체는 짧고 연산은 전부 서비스로 위임됨.</span>
-- <span style="color:red">(2026-09-05) 기동 시 투자제안 추천 캐시 백그라운드 예열(`_warm_proposal_cache`) +
+## app.py (244줄)
+- Flask 앱 팩토리 단일 진입점 — 앱 생성·블루프린트 등록·5개 페이지 라우트·프로필/읽기전용
+  게이트·SSR 주입 헬퍼가 한 파일에 모임. 라우트 함수 자체는 짧고 연산은 전부 서비스로 위임됨.
+- (2026-09-05) 기동 시 투자제안 추천 캐시 백그라운드 예열(`_warm_proposal_cache`) +
   web 프로필에서 매 요청을 계기로 `roll-lite-db` 워크플로를 조건부 원격 발동
-  (`WorkflowDispatcher` 호출, GitHub schedule 지연 우회). 약 198 → 244줄.</span>
+  (`WorkflowDispatcher` 호출, GitHub schedule 지연 우회). 약 198 → 244줄.
 
 ## backend/app/repositories/web_repository.py (393줄)
 - `WebRepository` 단일 클래스가 웹 대시보드 조회(종목 자동완성, 차트, TOP 수급 랭킹, 지수 summary,
@@ -75,13 +75,16 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
   `pd.NA` 를 bool 로 평가해 `TypeError` 가 나던 것을 `_MISSING` 센티넬로 (키 없음 / NA / 정상 정수)
   3분기 처리. 매수 편입부의 `float(cpct or 50.0)` 도 `pd.notna` 가드로 교체. 약 206 → 218줄.
 
-## backend/app/services/market_data_collector.py (349줄)
+## backend/app/services/market_data_collector.py (<span style="color:red">364줄</span>)
 - PyKRX/FinanceDataReader/Naver 등 복수 외부 데이터 소스에 대한 재시도·폴백 로직을 포함한
   수집 파이프라인이라, 외부 연동 특유의 예외 처리 분기가 많아 줄 수가 늘어남.
 - (2026-08-27) `collect_target_market_data`에 웹 진행바용 `progress_callback` 선택 인자 및
   종목 루프 내 호출부가 추가되어 약 5줄 증가.
 - (2026-08-30 Phase 0) `collect_target_market_data(ohlcv_only=)` 분기 —
   네이버/KRX 수급 스크래핑 없이 FDR OHLCV 폴백을 정식 경로로(CI용). 약 342 → 349줄.
+- <span style="color:red">(2026-09-06) `_fetch_fdr_fallback` 이 `fdr.DataReader` 직접 호출 대신 `fdr_safe.read_fdr`
+  (강제 타임아웃 wrapper, 신규 33줄)를 사용하도록 교체 — 무응답 호출 무한 대기 방지.
+  약 349 → 364줄(그간 미기록 증가분 포함).</span>
 
 ---
 위 <span style="color:red">7개</span> 파일은 현재 구조 유지를 제안드립니다. 특정 파일을 실제로 분리하길 원하시면 말씀해 주세요.
