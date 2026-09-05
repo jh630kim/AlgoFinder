@@ -99,7 +99,13 @@
                         <h3 style="margin: 0 0 4px 0; color: #38bdf8; font-size: 16px; font-weight: 800;">📈 백테스트 1,000만 원 포트폴리오 누적 자산 & 코스피 지수 비교 추이</h3>
                         <p style="margin: 0; font-size: 12px; color: #94a3b8;">초기 1,000만 원 투자 시 백테스트 기간 자산 성장 곡선 (왼쪽: 만원/원, 오른쪽: 코스피pt)</p>
                     </div>
-                    <div id="chartHoverOverlay" style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.4); padding: 6px 14px; border-radius: 8px; font-size: 12px; color: #cbd5e1; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;"></div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <label style="display: flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: 12px; font-weight: 700; cursor: pointer; user-select: none;">
+                            <input type="checkbox" id="chkShowTradeMarkers">
+                            매수/매도 표시
+                        </label>
+                        <div id="chartHoverOverlay" style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.4); padding: 6px 14px; border-radius: 8px; font-size: 12px; color: #cbd5e1; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10;"></div>
+                    </div>
                 </div>
                 <div style="position: relative; width: 100%; height: 360px;">
                     <canvas id="backtestAssetChart"></canvas>
@@ -162,12 +168,33 @@
 
             loadBacktestChartData();
 
+            const chkShowTradeMarkers = document.getElementById("chkShowTradeMarkers");
+            if (chkShowTradeMarkers) {
+                chkShowTradeMarkers.addEventListener("change", () => {
+                    // 차트를 다시 만들지 않고 마커 데이터셋만 추가/제거한다 (줌/팬 상태 유지 목적)
+                    if (!backtestAssetChartInstance || !window.cachedChartData) return;
+                    const baseDatasets = backtestAssetChartInstance.data.datasets.filter(d => !d._ptEvents);
+                    if (chkShowTradeMarkers.checked) {
+                        const selectedStrat = document.getElementById("strategyRankSelect")
+                            ? document.getElementById("strategyRankSelect").value : "S4";
+                        const assetHistory = backtestAssetChartInstance.data.datasets[0].data; // 평가자산 데이터셋
+                        const markerDatasets = buildTradeMarkerDatasets(window.cachedChartData, assetHistory, selectedStrat);
+                        backtestAssetChartInstance.data.datasets = baseDatasets.concat(markerDatasets);
+                    } else {
+                        backtestAssetChartInstance.data.datasets = baseDatasets;
+                    }
+                    backtestAssetChartInstance.update();
+                });
+            }
+
             if (stratSelect) {
                 stratSelect.addEventListener("change", () => {
                     const selectedStrat = stratSelect.value;
                     localStorage.setItem("algo_last_strategy", selectedStrat);
                     updateKpiCards(selectedStrat);
                     renderTradeLogsTable(selectedStrat);
+                    // 전략을 바꾸면 매수/매도 표시는 항상 기본값(숨김)으로 되돌린다
+                    if (chkShowTradeMarkers) chkShowTradeMarkers.checked = false;
                     if (window.cachedChartData) {
                         renderBacktestAssetChart(window.cachedChartData);
                     }
@@ -298,6 +325,9 @@
                         }
                         if (Array.isArray(res.chart_data)) {
                             window.cachedChartData = res.chart_data;
+                            // 기간(백테스트 재연산)이 바뀌면 매수/매도 표시는 항상 기본값(숨김)으로 되돌린다
+                            const chkShowTradeMarkers = document.getElementById("chkShowTradeMarkers");
+                            if (chkShowTradeMarkers) chkShowTradeMarkers.checked = false;
                             renderBacktestAssetChart(res.chart_data);
                         }
                         
@@ -397,29 +427,13 @@
             });
         }
 
-        function renderBacktestAssetChart(chartData) {
-            const canvas = document.getElementById("backtestAssetChart");
-            if (!canvas) return;
-
-            const dates = chartData.map((d) => d.date);
-            const kospiCloses = chartData.map((d) => d.kospi_close);
-            const kospiMa20 = chartData.map((d) => d.kospi_ma20);
-
-            // 선택된 백테스트 전략
-            const selectedStrat = document.getElementById("strategyRankSelect") ? document.getElementById("strategyRankSelect").value : "S4";
-            
-            // 백엔드에서 100% 정밀 연산된 일별 평가자산 시계열 (cash + hold_stocks * close_price)
-            const assetHistory = chartData.map(d => {
-                const assets = d.strategy_assets || {};
-                return assets[selectedStrat] !== undefined ? assets[selectedStrat] : 10000000;
-            });
-
-            // 슬롯별 색상 정의 (매수▲/매도▽ 동일 색상)
+        // 슬롯별 매수▲/매도▽ 마커 데이터셋 생성 (6개: 슬롯3 × BUY/SELL).
+        // 차트를 새로 만들지 않고 "매수/매도 표시" 체크박스만 토글할 때도 재사용하기 위해 분리했다.
+        function buildTradeMarkerDatasets(chartData, assetHistory, selectedStrat) {
             const SLOT_COLORS = { 1: "#3b82f6", 2: "#a855f7", 3: "#f97316" };
             const dateIndex = {};
-            dates.forEach((d, i) => { dateIndex[d] = i; });
+            chartData.forEach((d, i) => { dateIndex[d.date] = i; });
 
-            // 슬롯별 매수/매도 마커 데이터셋 생성 (6개: 슬롯3 × BUY/SELL)
             const markerDatasets = [];
             const events = (cachedTradeEvents && cachedTradeEvents[selectedStrat]) || [];
             [1, 2, 3].forEach(slot => {
@@ -452,32 +466,100 @@
                     }
                 });
             });
+            return markerDatasets;
+        }
 
+        function renderBacktestAssetChart(chartData) {
+            const canvas = document.getElementById("backtestAssetChart");
+            if (!canvas) return;
 
-            // afterDraw 커스텀 플러그인: 슬롯 번호 텍스트 캔버스 위에 직접 렌더링
-            const slotLabelPlugin = {
-                id: "slotLabelPlugin",
+            const dates = chartData.map((d) => d.date);
+            const kospiCloses = chartData.map((d) => d.kospi_close);
+            const kospiMa20 = chartData.map((d) => d.kospi_ma20);
+
+            // 선택된 백테스트 전략
+            const selectedStrat = document.getElementById("strategyRankSelect") ? document.getElementById("strategyRankSelect").value : "S4";
+            
+            // 백엔드에서 100% 정밀 연산된 일별 평가자산 시계열 (cash + hold_stocks * close_price)
+            const assetHistory = chartData.map(d => {
+                const assets = d.strategy_assets || {};
+                return assets[selectedStrat] !== undefined ? assets[selectedStrat] : 10000000;
+            });
+
+            // === 화면(줌/팬) 기준 최고/최저가 대비 등락률 표시용 상태 ===
+            // visibleRangeStats: 현재 화면에 보이는 구간의 최고/최저 인덱스·값 (null이면 재계산 대기 중이라 숨김)
+            let visibleRangeStats = null;
+            // hoveredIndex: 마우스가 가리키는 날짜 인덱스 (null이면 화면 우측 끝을 기준값으로 사용)
+            let hoveredIndex = null;
+            let zoomDebounceTimer = null;
+
+            // 화면에 보이는 구간(x축 min~max)에서 평가자산 최고/최저 지점을 다시 계산
+            function recalcVisibleRange(chart) {
+                if (!chart.canvas) return; // destroy된 차트 방어
+                const xScale = chart.scales.x;
+                const lo = Math.max(0, Math.round(xScale.min));
+                const hi = Math.min(assetHistory.length - 1, Math.round(xScale.max));
+                let maxVal = -Infinity, minVal = Infinity, maxIdx = lo, minIdx = lo;
+                for (let i = lo; i <= hi; i++) {
+                    const v = assetHistory[i];
+                    if (v === null || v === undefined) continue;
+                    if (v > maxVal) { maxVal = v; maxIdx = i; }
+                    if (v < minVal) { minVal = v; minIdx = i; }
+                }
+                visibleRangeStats = { maxIdx, minIdx, maxVal, minVal };
+                chart.update("none");
+            }
+
+            // 줌/팬 동작 직후 1초간 디바운스: 그 사이 조작이 다시 발생하면 타이머를 리셋한다
+            function scheduleVisibleRangeRecalc(chart) {
+                visibleRangeStats = null; // 재계산 전까지는 숫자 숨김
+                if (zoomDebounceTimer) clearTimeout(zoomDebounceTimer);
+                zoomDebounceTimer = setTimeout(() => recalcVisibleRange(chart), 1000);
+            }
+
+            // 등락률 계산 기준값: 마우스가 가리키는 날짜 우선, 없으면 화면 우측 끝의 마지막 유효값
+            function getReferenceValue(chart) {
+                if (hoveredIndex !== null && assetHistory[hoveredIndex] !== undefined && assetHistory[hoveredIndex] !== null) {
+                    return assetHistory[hoveredIndex];
+                }
+                const xScale = chart.scales.x;
+                let idx = Math.min(assetHistory.length - 1, Math.round(xScale.max));
+                while (idx >= 0 && (assetHistory[idx] === null || assetHistory[idx] === undefined)) idx--;
+                return idx >= 0 ? assetHistory[idx] : null;
+            }
+
+            // "매수/매도 표시" 체크박스 현재 상태 (기본 숨김)
+            const showTradeMarkers = document.getElementById("chkShowTradeMarkers")
+                ? document.getElementById("chkShowTradeMarkers").checked
+                : false;
+
+            // 슬롯별 매수/매도 마커 데이터셋 생성 (6개: 슬롯3 × BUY/SELL)
+            const markerDatasets = buildTradeMarkerDatasets(chartData, assetHistory, selectedStrat);
+
+            // afterDraw 커스텀 플러그인: 화면(줌/팬) 기준 최고/최저 지점에 등락률(%)만 표시
+            const visibleExtremesPlugin = {
+                id: "visibleExtremesPlugin",
                 afterDraw(chart) {
+                    if (!visibleRangeStats) return; // 디바운스 대기 중에는 숨김
+                    const ref = getReferenceValue(chart);
+                    if (ref === null || ref === undefined) return;
+                    const meta = chart.getDatasetMeta(0); // 평가자산 데이터셋
+                    const { maxIdx, minIdx, maxVal, minVal } = visibleRangeStats;
                     const ctx2 = chart.ctx;
-                    chart.data.datasets.forEach((ds, dsIdx) => {
-                        if (!ds._ptEvents) return;
-                        const meta = chart.getDatasetMeta(dsIdx);
-                        ds._ptEvents.forEach(ev => {
-                            const idx = dateIndex[ev.date];
-                            if (idx === undefined) return;
-                            const pt = meta.data[idx];
-                            if (!pt || pt.x === undefined) return;
-                            const px = pt.x;
-                            const py = pt.y;
-                            const offset = ds._type === "BUY" ? -16 : 16;
-                            ctx2.save();
-                            ctx2.font = "bold 10px sans-serif";
-                            ctx2.fillStyle = SLOT_COLORS[ds._slot] || "#fff";
-                            ctx2.textAlign = "center";
-                            ctx2.fillText(ds._slot, px, py + offset);
-                            ctx2.restore();
-                        });
-                    });
+                    const drawPct = (idx, baseVal, offsetY) => {
+                        const pt = meta.data[idx];
+                        if (!pt) return;
+                        const pct = ((ref - baseVal) / baseVal) * 100;
+                        const sign = pct > 0 ? "+" : "";
+                        ctx2.save();
+                        ctx2.font = "bold 11px sans-serif";
+                        ctx2.fillStyle = pct > 0 ? "#34d399" : (pct < 0 ? "#f87171" : "#cbd5e1");
+                        ctx2.textAlign = "center";
+                        ctx2.fillText(`${sign}${pct.toFixed(1)}%`, pt.x, pt.y + offsetY);
+                        ctx2.restore();
+                    };
+                    drawPct(maxIdx, maxVal, -14);
+                    drawPct(minIdx, minVal, 16);
                 }
             };
 
@@ -519,7 +601,8 @@
                             yAxisID: "yKospi",
                             order: 3,
                         },
-                    ].concat(markerDatasets),
+                    // "매수/매도 표시" 체크박스가 켜져 있을 때만 슬롯별 매수/매도 마커를 포함한다(기본은 숨김)
+                    ].concat(showTradeMarkers ? markerDatasets : []),
                 },
                 options: {
                     responsive: true,
@@ -542,11 +625,14 @@
                                 if (!overlay) return;
                                 const tooltipModel = context.tooltip;
                                 if (tooltipModel.opacity === 0) {
-                                    overlay.style.display = "none";
+                                    // 마우스가 벗어나도 정보 박스는 마지막 값을 그대로 유지(숨기지 않음).
+                                    // 등락률 기준값만 화면 우측 끝으로 되돌린다.
+                                    hoveredIndex = null;
                                     return;
                                 }
 
-                                if (tooltipModel.body) {
+                                if (tooltipModel.body && tooltipModel.dataPoints && tooltipModel.dataPoints.length > 0) {
+                                    hoveredIndex = tooltipModel.dataPoints[0].dataIndex;
                                     const title = tooltipModel.title[0] || '';
                                     let html = `<div style="font-weight:700; color:#38bdf8; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:2px;">📅 ${title}</div>`;
                                     tooltipModel.dataPoints.forEach(pt => {
@@ -567,7 +653,8 @@
                         zoom: {
                             pan: {
                                 enabled: true,
-                                mode: 'x'
+                                mode: 'x',
+                                onPanComplete: ({ chart }) => scheduleVisibleRangeRecalc(chart)
                             },
                             zoom: {
                                 wheel: {
@@ -576,7 +663,8 @@
                                 pinch: {
                                     enabled: true
                                 },
-                                mode: 'x'
+                                mode: 'x',
+                                onZoomComplete: ({ chart }) => scheduleVisibleRangeRecalc(chart)
                             }
                         }
                     },
@@ -605,7 +693,13 @@
                         },
                     },
                 },
-            }, [slotLabelPlugin]);
+                // Chart.js v4는 개별 차트 전용 플러그인을 생성자 3번째 인자가 아니라
+                // config.plugins 배열로 전달해야 동작한다.
+                plugins: [visibleExtremesPlugin],
+            });
+
+            // 최초 렌더 시에는 디바운스 없이 즉시 전체 구간 기준으로 표시
+            recalcVisibleRange(backtestAssetChartInstance);
         }
     </script>
 </body>

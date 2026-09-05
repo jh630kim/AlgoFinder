@@ -2,6 +2,13 @@
 
 CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입니다. 사용자 검토 대상입니다.
 
+## <span style="color:red">app.py (244줄)</span>
+- <span style="color:red">Flask 앱 팩토리 단일 진입점 — 앱 생성·블루프린트 등록·5개 페이지 라우트·프로필/읽기전용
+  게이트·SSR 주입 헬퍼가 한 파일에 모임. 라우트 함수 자체는 짧고 연산은 전부 서비스로 위임됨.</span>
+- <span style="color:red">(2026-09-05) 기동 시 투자제안 추천 캐시 백그라운드 예열(`_warm_proposal_cache`) +
+  web 프로필에서 매 요청을 계기로 `roll-lite-db` 워크플로를 조건부 원격 발동
+  (`WorkflowDispatcher` 호출, GitHub schedule 지연 우회). 약 198 → 244줄.</span>
+
 ## backend/app/repositories/web_repository.py (393줄)
 - `WebRepository` 단일 클래스가 웹 대시보드 조회(종목 자동완성, 차트, TOP 수급 랭킹, 지수 summary,
   업종/종목 필터링 등)만 전담하는 단일 책임 안에서, 조회 메서드 개수 자체가 많아 줄 수가 늘어남.
@@ -32,9 +39,9 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
   약 593 → 612줄.
 - (2026-08-30) 순수관행 엔트리 `except` 블록을 `logger.exception` + 진행 메시지 표기로
   변경(엔트리 실패가 조용히 묻히던 것을 표면화). 약 612 → 617줄.
-- <span style="color:red">(2026-08-30) `backtest_run` 부분 실패 보고 — combo 루프·순수관행 엔트리의 `except` 를
+- (2026-08-30) `backtest_run` 부분 실패 보고 — combo 루프·순수관행 엔트리의 `except` 를
   모두 `logger.exception` + `failed_entries` 수집으로 통일하고, 종료 시 실패가 있으면
-  진행 메시지·응답 JSON(`failed`)에 실패 항목을 남긴다. 약 617 → 628줄.</span>
+  진행 메시지·응답 JSON(`failed`)에 실패 항목을 남긴다. 약 617 → 628줄.
 
 ## backend/app/services/proposal_advisor.py (285줄)
 - 투자제안/모의투자 화면 데이터 조립(추천·매도신호·포트폴리오 평가)을 담당하는
@@ -77,4 +84,4 @@ CLAUDE.md 규칙 3(단일 파일 200줄 원칙)을 초과한 파일과 사유입
   네이버/KRX 수급 스크래핑 없이 FDR OHLCV 폴백을 정식 경로로(CI용). 약 342 → 349줄.
 
 ---
-위 6개 파일은 현재 구조 유지를 제안드립니다. 특정 파일을 실제로 분리하길 원하시면 말씀해 주세요.
+위 <span style="color:red">7개</span> 파일은 현재 구조 유지를 제안드립니다. 특정 파일을 실제로 분리하길 원하시면 말씀해 주세요.

@@ -1,17 +1,19 @@
 name: roll-lite-db
 
-# 경량 DB를 매일 갱신 → GitHub Release 자산 교체 → Render 재배포 훅 호출 → Discord 알림.
+# 경량 DB 갱신 → GitHub Release 자산 교체 → Render 재배포 훅 호출 → Discord 커버리지 리포트.
 # 최초 1회는 로컬에서 `python deploy/build_lite_db.py` 실행 후 Release( tag: lite-db )에
 # app_lite.db 를 업로드해 두어야 한다.
 #
+# 트리거: schedule 크론은 GitHub 부하 시간대에서 4~8시간씩 지연돼 제거했다. 이제 이 워크플로는
+# (1) Render 웹앱이 평일 KST 17시 이후 UptimeRobot 핑을 계기로 REST API(workflow_dispatch)로
+#     원격 발동하거나, (2) 사람이 수동 실행할 때만 돈다.
+#
 # CI는 KRX 로그인·네이버 스크래핑이 막혀 있으므로 `roll_lite_db.py`가 `stage=ohlcv-only`로만 수집한다
-# (지수 FDR + 타깃 OHLCV FDR, 수급 컬럼 NULL). 수집이 실패하거나, 새 거래일도 없고 최신일 결손
-# 백필(행 수 증가)도 없으면 스크립트가 비정상 종료하고, 이후 Release 업로드·재배포는 건너뛰며
-# Discord로 경고를 보낸다.
+# (지수 FDR + 타깃 OHLCV FDR, 수급 컬럼 NULL). 수집 실패·신규 거래일 없음이면 스크립트가 exit 1 →
+# 이후 Release 업로드·재배포는 건너뛴다. 마지막 커버리지 리포트 스텝은 항상 실행돼
+# "오늘(KST) 수집 종목 수 / 전체" 를 Discord 로 보고한다(휴장이면 0/N).
 
 on:
-  schedule:
-    - cron: "30 9 * * 1-5"      # 평일 09:30 UTC (KST 18:30)
   workflow_dispatch: {}
 
 permissions:
@@ -47,7 +49,7 @@ jobs:
 
       - name: Roll (ohlcv-only incremental collect + prune)
         # FDR 지수 + 타깃 OHLCV만 증분 수집(수급 NULL) 후 730일 밖 프루닝/VACUUM.
-        # 수집 실패·신규 거래일 없음이면 스크립트가 exit 1 → 이후 스텝 건너뜀 + 아래 실패 알림.
+        # 수집 실패·신규 거래일 없음이면 스크립트가 exit 1 → 이후 Release 업로드·재배포 스텝 건너뜀.
         run: python deploy/roll_lite_db.py
 
       - name: Upload lite DB to Release
@@ -63,22 +65,10 @@ jobs:
         run: |
           if [ -n "$HOOK" ]; then curl -fsSL -X POST "$HOOK"; else echo "RENDER_DEPLOY_HOOK_URL 미설정 — 건너뜀"; fi
 
-      - name: Discord notify (failure warning)
-        if: failure()
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          if [ -n "$WEBHOOK" ]; then
-            curl -fsSL -H "Content-Type: application/json" -X POST \
-              -d "{\"content\":\"⚠️ roll-lite-db 실패 ($(date -u +%FT%TZ)) — ohlcv-only 수집 실패/신규 거래일 없음. 기존 Release 자산 보존, 재배포 건너뜀. 수동 조치 필요(Actions 재실행 또는 로컬 build_lite_db.py 후 Release 교체).\"}" "$WEBHOOK"
-          fi
-
-      - name: Discord notify (result)
+      - name: Discord coverage report
+        # 성공·중단·부분실패 무관하게 항상 실행. 갱신된 app_lite.db 에서 오늘(KST) 날짜에
+        # 데이터가 들어온 타깃 종목 수 / 전체를 계산해 Discord 로 보고한다(휴장이면 0/N).
         if: always()
         env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          if [ -n "$WEBHOOK" ]; then
-            curl -fsSL -H "Content-Type: application/json" -X POST \
-              -d "{\"content\":\"roll-lite-db: ${{ job.status }} ($(date -u +%FT%TZ))\"}" "$WEBHOOK"
-          fi
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python deploy/report_coverage.py

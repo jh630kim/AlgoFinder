@@ -101,10 +101,21 @@ _WEB_REDIRECT_PAGES = {"/", "/backtest", "/recommendation", "/proposal"}
 # READONLY: 시세 쓰기 경로만 차단(가상매매 paper 쓰기는 영향 없음)
 _READONLY_BLOCKED_PREFIXES = ("/api/sync",)
 
+# GitHub `schedule` 트리거 지연 우회: 웹 프로필에서만, 요청 흐름을 시계 삼아
+# 평일 KST 17시 이후 하루 1회 roll-lite-db 워크플로를 원격 발동한다(비차단).
+from backend.app.services.workflow_dispatcher import WorkflowDispatcher
+_wf_dispatcher = WorkflowDispatcher(settings.GITHUB_DISPATCH_TOKEN, settings.DISCORD_WEBHOOK_URL)
+
 
 @app.before_request
 def _profile_readonly_gate():
-    """실행 프로필·읽기전용 규칙에 따라 요청을 사전 차단/리다이렉트합니다."""
+    """실행 프로필·읽기전용 규칙에 따라 요청을 사전 차단/리다이렉트합니다.
+
+    아울러 web 프로필에서는 매 요청을 계기로 데이터 갱신 워크플로 원격 발동을 시도한다
+    (조건 미충족·중복 시 즉시 무시하므로 응답 지연 없음).
+    """
+    if WEB_PROFILE:
+        _wf_dispatcher.maybe_dispatch()
     path = "/" + request.path.strip("/")
     if WEB_PROFILE and path in _WEB_REDIRECT_PAGES:
         return redirect(url_for("proposal_mobile"))

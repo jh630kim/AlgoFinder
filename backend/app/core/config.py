@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     KRX_ID: str = ""
     KRX_PW: str = ""
 
+    # GitHub Actions 원격 트리거용 PAT (Actions: Read/write). 비어 있으면 원격 트리거 비활성.
+    GITHUB_DISPATCH_TOKEN: str = ""
+
     class Config:
         """pydantic 설정 메타클래스."""
         env_file = ".env"
