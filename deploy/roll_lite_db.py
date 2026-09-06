@@ -60,6 +60,30 @@ def _prune(db: str, days: int) -> str:
         conn.close()
 
 
+def _prune_etf(db: str) -> None:
+    """웹(lite) 수집 대상에서 미국 ETF(sector='ETF_USA')를 제거합니다(첫 실행 후엔 no-op).
+
+    투자제안은 KOSPI200/KOSDAQ150만 쓰므로 ETF 는 웹에서 불필요하고 FDR 수집 부하만 크다.
+    build_lite_db.py 로 재빌드하지 않아도, 이 스텝이 배포된 lite DB 에서 ETF 를 자동으로 뺀다.
+    """
+    conn = sqlite3.connect(db)
+    try:
+        etf = [r[0] for r in conn.execute(
+            "SELECT code FROM all_stock_master WHERE sector = 'ETF_USA'")]
+        if not etf:
+            return
+        ph = ",".join("?" * len(etf))
+        n1 = conn.execute(
+            f"DELETE FROM investor_trading_daily WHERE symbol IN ({ph})", etf).rowcount
+        n2 = conn.execute(
+            f"DELETE FROM target_stocks WHERE symbol IN ({ph})", etf).rowcount
+        conn.commit()
+        if n1 or n2:
+            print(f"ETF 제외: target_stocks -{n2}, investor_trading_daily -{n1:,}")
+    finally:
+        conn.close()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="data/app_lite.db")
@@ -73,6 +97,7 @@ def main() -> None:
     os.environ["DATABASE_URL"] = f"sqlite:///./{args.db.replace(os.sep, '/')}"
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+    _prune_etf(args.db)  # 배포된 lite DB 에서 미국 ETF 자동 제거(첫 실행 후 no-op)
     before_max, before_cnt = _investor_stats(args.db)
     print(f"증분 수집 시작 (mode=incremental, stage=ohlcv-only) ... "
           f"현재 최신일 {before_max or '(없음)'}, 행 {before_cnt:,}")

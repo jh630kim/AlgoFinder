@@ -78,7 +78,11 @@ def build(src: str, dst: str, days: int) -> None:
         for table in KEEP_ALL:
             cols = _common_columns(conn, table)
             col_sql = ", ".join(cols)
-            conn.execute(f"INSERT INTO {table} ({col_sql}) SELECT {col_sql} FROM full.{table}")
+            # 미국 ETF(sector='ETF_USA')는 웹(lite)에서 제외 — 투자제안 대상이 아니고 FDR 수집 부하만 큼.
+            # all_stock_master 는 전체 유지, target_stocks 만 필터한다(시세 복사가 target_stocks 기준이므로 자동 축소).
+            where = ("WHERE symbol NOT IN (SELECT code FROM full.all_stock_master "
+                     "WHERE sector = 'ETF_USA')") if table == "target_stocks" else ""
+            conn.execute(f"INSERT INTO {table} ({col_sql}) SELECT {col_sql} FROM full.{table} {where}")
 
         cols = _common_columns(conn, "investor_trading_daily")
         col_sql = ", ".join(cols)

@@ -113,6 +113,10 @@ class WorkflowDispatcher:
         import requests
 
         try:
-            requests.post(self._webhook, json={"content": content}, timeout=10)
+            # User-Agent 명시: 기본값(python-requests/x.y)이 Discord 에서 간헐 403 차단됨.
+            requests.post(
+                self._webhook, json={"content": content}, timeout=10,
+                headers={"User-Agent": "AlgoFinder/1.0 (wf-dispatch)"},
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"[wf-dispatch] 실패 알림 전송 예외: {exc}")

@@ -6,6 +6,8 @@ PyKRX 및 FinanceDataReader/Naver API를 활용하여 타깃 종목의
 """
 
 from typing import List, Dict, Any, Optional
+import json
+import os
 import time
 import logging
 from datetime import datetime, timedelta
@@ -17,6 +19,10 @@ from backend.app.repositories.sync_log_repository import SyncLogRepository
 from backend.app.repositories.stock_master_repository import StockMasterRepository
 
 logger = logging.getLogger(__name__)
+
+# 수집 진행 상황 기록 파일: 타임아웃 강제종료 시에도 마지막 카운트가 남도록 종목마다 갱신.
+# deploy/report_coverage.py 가 이 파일을 읽어 Discord 커버리지("성공/시도")를 보고한다.
+PROGRESS_FILE = "data/roll_progress.json"
 
 
 class MarketDataCollector:
@@ -35,6 +41,28 @@ class MarketDataCollector:
         self.target_repo = TargetStocksRepository(session)
         self.sync_log_repo = SyncLogRepository(session)
         self.master_repo = StockMasterRepository(session)
+
+    @staticmethod
+    def _write_progress(attempted: int, with_data: int, rows_saved: int, total: int,
+                        range_str: str, failed_sample: List[str], done: bool) -> None:
+        """수집 진행 상황을 `PROGRESS_FILE`(JSON)에 기록합니다(타임아웃 강제종료 대비).
+
+        :param attempted: 시도한 종목 수  :param with_data: 1행 이상 수집된 종목 수
+        :param rows_saved: 누적 적재 행 수  :param total: 전체 타깃 수
+        :param range_str: 수집 기간 'YYYYMMDD~YYYYMMDD'
+        :param failed_sample: 빈 결과 종목 코드 샘플  :param done: 루프 정상 완주 여부
+        """
+        try:
+            os.makedirs(os.path.dirname(PROGRESS_FILE), exist_ok=True)
+            with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+                json.dump({
+                    "attempted": attempted, "with_data": with_data, "rows_saved": rows_saved,
+                    "total_targets": total, "range": range_str,
+                    "failed_sample": list(failed_sample), "done": done,
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                }, f, ensure_ascii=False)
+        except OSError:
+            pass  # 진행파일 기록 실패는 무시(수집 자체엔 영향 없음)
 
     def _fetch_fdr_fallback(self, symbol: str, start_date: str, end_date: str, reason: str,
                             retries: int = 3) -> List[Dict[str, Any]]:
@@ -288,6 +316,10 @@ class MarketDataCollector:
         total_symbols = len(symbols)
         total_records = 0
         skipped_count = 0
+        attempted = 0          # 실제로 FDR/스크래핑을 시도한 종목 수(증분 스킵 제외)
+        with_data = 0          # 그 중 1행 이상 수집된 종목 수
+        failed_sample: List[str] = []  # 빈 결과로 스킵된 종목 코드(앞부분만 표기용)
+        range_str = f"{default_start}~{actual_end}"
 
         mode_str = "스마트 증분(Incremental)" if incremental else "전체(Full)"
         logger.info(f"총 {total_symbols}개 타깃 종목 수집 시작 [{mode_str} 모드]...")
@@ -316,18 +348,25 @@ class MarketDataCollector:
                         target_start = next_day_str
 
             # ohlcv_only: 네이버/KRX 수급 스크래핑을 건너뛰고 FDR OHLCV 폴백을 정식 경로로 사용
+            attempted += 1
             if ohlcv_only:
                 items = self._fetch_fdr_fallback(sym, target_start, actual_end, "OHLCV 전용 수집(수급 스크래핑 생략)")
             else:
                 items = self.fetch_trading_data_with_retry(sym, target_start, actual_end)
             saved = 0
             if items:
+                with_data += 1
                 saved = self.market_repo.bulk_upsert(items)
                 total_records += saved
+            elif len(failed_sample) < 10:
+                failed_sample.append(sym)
 
             logger.info(f"  ├─ [{idx:3d}/{total_symbols:3d}] ({pct:5.1f}%) {sym} {stock_name} 수집 완료 ({target_start}~{actual_end}, {saved}건 적재)")
+            self._write_progress(attempted, with_data, total_records, total_symbols, range_str, failed_sample, False)
             if not ohlcv_only:
                 time.sleep(0.5)  # KRX 서버 호출 제한(Rate Limit) 방지 0.5초 여유 딜레이
+
+        self._write_progress(attempted, with_data, total_records, total_symbols, range_str, failed_sample, True)
 
         # 총 소요시간 측정 및 가독형 표현 계산
         elapsed_sec = round(time.time() - start_time, 2)
