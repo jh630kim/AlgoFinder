@@ -87,6 +87,11 @@ body {
     margin-bottom: 20px;
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    /* PC(시뮬레이션·모의투자·투자제안): 스크롤해도 콘텐츠 상단에 고정.
+       사이드바(z-index:100) 아래, 표 헤더(z-index:10) 위에 오도록 z-index 지정. */
+    position: sticky;
+    top: 12px;
+    z-index: 30;
 }
 
 .control-group {
@@ -433,12 +438,10 @@ body {
 }
 .mobile-view .mobile-card-item:last-child { margin-bottom: 0; }
 
-/* 스티키 제어 패널: 스크롤 시 상단 고정 */
+/* 투자제안(모): 제어 패널은 스티키 해제 — 다른 카드처럼 스크롤과 함께 이동 */
 .mobile-view .sticky-control-bar {
-    position: sticky;
-    top: 8px;
-    z-index: 50;
-    display: block;                       /* PC 가로 flex 정렬 해제 */
+    position: static;
+    display: block;                       /* PC 가로 flex 정렬 해제 (유지) */
 }
 
 /* 제어 패널 하단 요약(최근 수집일 / 평가 기준일 / 휴장일 안내) */
