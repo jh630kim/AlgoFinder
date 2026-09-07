@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.models.investor_trading_daily import InvestorTradingDaily
 from backend.app.models.all_stock_master import AllStockMaster
+from backend.app.core.special_stocks import DEFAULT_TARGET_SECTORS
 from backend.app.repositories.strategy_leaderboard_repository import StrategyLeaderboardRepository
 from backend.app.repositories.strategy_trade_logs_repository import StrategyTradeLogsRepository
 from backend.app.repositories.strategy_daily_equity_repository import StrategyDailyEquityRepository
@@ -177,7 +178,7 @@ class BacktestEngine:
 
         combo_name, strat_keys = STRATEGY_COMBOS[combo_id]
         if not target_sectors:
-            target_sectors = ["KOSPI 200", "KOSDAQ 150"]
+            target_sectors = list(DEFAULT_TARGET_SECTORS)
 
         # 기간 기본값을 먼저 확정한 뒤 해당 구간(+워밍업 버퍼)만 DB에서 로딩
         today_dt = datetime.now()

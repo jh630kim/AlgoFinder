@@ -77,6 +77,14 @@
 
 * 세션 내부에서 새로운 컨벤션을 지정하거나 프로젝트 변화를 기록할 때는 `[yyyymmdd]_제목` 형식 아래 개조식으로 이 문서에 추가한다.
 
+### `[20260906]_특별관리종목`
+
+* 지수(KOSPI200/KOSDAQ150) 자동 편입과 무관하게 상시 추적할 종목을 `data/special_stocks.json` 단일 소스에 등재한다(`stocks[].code` 6자리 필수, `name`/`memo` 참고용). git 추적 대상.
+* 로더는 `backend/app/core/special_stocks.py` — `SpecialStocks.codes()` / `SPECIAL_SECTOR_LABEL="특별관리"` / `DEFAULT_TARGET_SECTORS=["KOSPI 200","KOSDAQ 150","특별관리"]`.
+* 1단계(`run_data_collection.py --stage 1`)의 `filter_target_symbols`가 이 목록을 타깃 집합에 합집합으로 병합하고, 기존 sector 가 `일반`인 종목만 `특별관리`로 라벨링한다(실제 지수 편입 라벨은 존중). 타깃 전체 DELETE→재INSERT 방식이라도 매 실행 재병합되어 유지된다.
+* 백테스트·투자제안·모의투자·순수관행의 기본 대상군은 모두 `DEFAULT_TARGET_SECTORS` 를 참조하도록 통일(하드코딩 `["KOSPI 200","KOSDAQ 150"]` 제거). `run_backtest.py --target` 은 `특별관리` 토큰을 인식하며 기본값에도 포함.
+* 신규 등재 종목의 시세·수급은 `--stage 3` 최초 실행 시 `20050101~` 전 구간이 수집된다. 경량 DB(`build_lite_db.py`)는 `target_stocks` 기준 복사라 자동 포함(ETF_USA 만 제외).
+
 ---
 
 ## 4. 프로젝트 표준 폴더 구조

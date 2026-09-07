@@ -1,0 +1,10 @@
+{
+  "_comment": "특별관리종목 단일 소스. 지수(KOSPI200/KOSDAQ150) 자동 편입과 무관하게 데이터 수집 타깃(target_stocks)과 백테스트/투자제안/모의투자 유니버스에 항상 포함시킬 종목 목록. run_data_collection.py --stage 1 실행 시마다 이 목록이 타깃 집합에 합쳐지고 all_stock_master.sector 가 '특별관리'로 라벨링된다. code(6자리 문자열)만 필수, name/memo 는 참고용.",
+  "stocks": [
+    {
+      "code": "950160",
+      "name": "코오롱티슈진",
+      "memo": "KOSDAQ 상장 유지·정상 거래 중이나 인보사 이슈로 KOSPI200/KOSDAQ150 미편입(2025~2026 확인). 수동 추적 대상."
+    }
+  ]
+}

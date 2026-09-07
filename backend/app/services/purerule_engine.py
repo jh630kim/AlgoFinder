@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.services.backtest_engine import BacktestEngine
 from backend.app.services.composite_score import CompositeScorer
+from backend.app.core.special_stocks import DEFAULT_TARGET_SECTORS
 from backend.app.repositories.strategy_leaderboard_repository import StrategyLeaderboardRepository
 from backend.app.repositories.strategy_trade_logs_repository import StrategyTradeLogsRepository
 from backend.app.repositories.strategy_daily_equity_repository import StrategyDailyEquityRepository
@@ -47,7 +48,7 @@ class PureRuleEngine:
                      start_date: str = None, end_date: str = None,
                      target_sectors=None) -> dict:
         """순수관행 시뮬레이션을 실행하고 리더보드/매매일지/일별자산을 저장합니다."""
-        target_sectors = target_sectors or ["KOSPI 200", "KOSDAQ 150"]
+        target_sectors = target_sectors or list(DEFAULT_TARGET_SECTORS)
         today = datetime.now().strftime("%Y%m%d")
         end_date = end_date or today
         start_date = start_date or (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")

@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backend.app.core.database import db_manager
+from backend.app.core.special_stocks import DEFAULT_TARGET_SECTORS, SPECIAL_SECTOR_LABEL
 from backend.app.services.backtest_engine import BacktestEngine, STRATEGY_COMBOS
 from backend.app.repositories.strategy_leaderboard_repository import StrategyLeaderboardRepository
 
@@ -42,8 +43,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--target",
-        default="KOSPI 200,KOSDAQ 150",
-        help="투자 대상 군 선택 (콤마 구분: KOSPI 200,KOSDAQ 150, 기본값: KOSPI 200,KOSDAQ 150)"
+        default="KOSPI 200,KOSDAQ 150,특별관리",
+        help="투자 대상 군 선택 (콤마 구분: KOSPI 200,KOSDAQ 150,특별관리,ETF / 기본값: KOSPI 200,KOSDAQ 150,특별관리)"
     )
     parser.add_argument("--start", help="시뮬레이션 시작일자 (YYYYMMDD, 미지정 시 최근 1년)")
     parser.add_argument("--end", help="시뮬레이션 종료일자 (YYYYMMDD, 미지정 시 오늘)")
@@ -52,7 +53,7 @@ def main() -> None:
 
     target_str = args.target.upper()
     if target_str == "ALL":
-        target_sectors = ["KOSPI 200", "KOSDAQ 150"]
+        target_sectors = list(DEFAULT_TARGET_SECTORS)
     else:
         raw_targets = [t.strip() for t in target_str.split(",") if t.strip()]
         target_sectors = []
@@ -63,6 +64,8 @@ def main() -> None:
                 target_sectors.append("KOSDAQ 150")
             elif "ETF" in t:
                 target_sectors.append("ETF_USA")
+            elif "특별" in t or t == SPECIAL_SECTOR_LABEL:
+                target_sectors.append(SPECIAL_SECTOR_LABEL)
 
     today_dt = datetime.now()
     end_date = args.end if args.end else today_dt.strftime("%Y%m%d")

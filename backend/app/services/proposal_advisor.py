@@ -19,13 +19,14 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
 from backend.app.models.all_stock_master import AllStockMaster
+from backend.app.core.special_stocks import DEFAULT_TARGET_SECTORS
 from backend.app.services.backtest_engine import (
     BacktestEngine, STRATEGY_MAP, STOP_LOSS_PCT, TAKE_PROFIT_PCT,
 )
 
 logger = logging.getLogger(__name__)
 
-TARGET_SECTORS = ["KOSPI 200", "KOSDAQ 150"]
+TARGET_SECTORS = list(DEFAULT_TARGET_SECTORS)
 # STOP_LOSS_PCT / TAKE_PROFIT_PCT 는 backtest_engine 에서 import (백테스트와 동일 값 공유)
 
 # 창 크기(달력일): 앞쪽은 지표 워밍업, 뒤쪽은 '다음날 조회' 반복을 재로딩 없이 흡수

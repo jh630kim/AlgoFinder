@@ -11,6 +11,7 @@ import logging
 from sqlalchemy.orm import Session
 from backend.app.repositories.stock_master_repository import StockMasterRepository
 from backend.app.repositories.target_stocks_repository import TargetStocksRepository
+from backend.app.core.special_stocks import SpecialStocks, SPECIAL_SECTOR_LABEL
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,32 @@ class StockMasterCollector:
                 item["sector"] = "ETF_USA"
                 target_codes.add(item["code"])
 
+        # 4. 특별관리종목(설정 파일) 병합 — 지수 편입과 무관하게 항상 타깃 유지
+        self._apply_special_stocks(item_dict, target_codes)
+
         return sorted(list(target_codes))
+
+    def _apply_special_stocks(self, item_dict: Dict[str, Dict[str, Any]], target_codes: Set[str]) -> None:
+        """
+        특별관리종목(설정 파일)을 타깃 집합에 합치고 sector 라벨을 부여합니다.
+
+        지수 정기변경으로 target_codes 가 매 실행마다 재계산되어도 이 병합이 항상 수행되므로,
+        특별관리종목은 `--stage 1` 재실행(타깃 전체 DELETE→재INSERT)에도 유지됩니다.
+
+        :param item_dict: 종목코드 → 종목정보 딕셔너리 맵 (sector 가 여기서 갱신되어 DB에 반영됨)
+        :param target_codes: 타깃 종목코드 집합 (in-place 로 특별관리 코드 추가)
+        """
+        for code in SpecialStocks.codes():
+            target_codes.add(code)
+            item = item_dict.get(code)
+            if item is None:
+                # 마스터에 없는 코드(오타·상장폐지 등) — 타깃엔 넣되 경고만 남긴다
+                logger.warning("특별관리종목 %s 가 종목 마스터에 없습니다. sector 라벨 미적용.", code)
+                continue
+            # 이미 지수(KOSPI 200 등)로 분류된 종목은 실제 편입 라벨을 존중하고,
+            # 그 외('일반')만 특별관리로 라벨링한다.
+            if item.get("sector") in (None, "", "일반"):
+                item["sector"] = SPECIAL_SECTOR_LABEL
 
     def run_sync(self) -> Dict[str, Any]:
         """

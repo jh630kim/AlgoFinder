@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from backend.app.core.database import db_manager
+from backend.app.core.special_stocks import DEFAULT_TARGET_SECTORS
 from backend.app.repositories.paper_trading_repository import PaperTradingRepository
 from backend.app.models.all_stock_master import AllStockMaster
 
@@ -114,7 +115,7 @@ def backtest_run():
                     max_slots=5,  # Phase 2: 전 백테스트 5슬롯 통일
                     start_date=start_date,
                     end_date=end_date,
-                    target_sectors=["KOSPI 200", "KOSDAQ 150"]
+                    target_sectors=list(DEFAULT_TARGET_SECTORS)
                 )
             except Exception as e:
                 # 트레이스백을 남기고 실패 목록에 담는다(해당 조합만 건너뜀).
@@ -129,7 +130,7 @@ def backtest_run():
             PureRuleEngine(session).run_backtest(
                 initial_capital=10000000.0, max_slots=5,
                 start_date=start_date, end_date=end_date,
-                target_sectors=["KOSPI 200", "KOSDAQ 150"],
+                target_sectors=list(DEFAULT_TARGET_SECTORS),
             )
         except Exception as e:
             # 트레이스백을 남기고 실패 목록에 담는다(순수관행 엔트리만 건너뜀).

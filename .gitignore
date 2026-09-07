@@ -38,6 +38,9 @@ data/*.gz
 # 백테스트 렌더 payload 파일 캐시 (backtest_run 시 재생성)
 data/backtest_render_cache.json
 
+# 데이터 수집 진행/커버리지 상태 파일 (수집 실행 시 재생성)
+data/roll_progress.json
+
 # IDE & Editor
 .vscode/
 .idea/
