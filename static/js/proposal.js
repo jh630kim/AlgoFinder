@@ -542,9 +542,10 @@
             }));
     }
 
-    // 네이버 증권 종목분석(컨센서스) 페이지를 새 탭으로 연다
+    // 네이버 증권 종목 페이지를 새 탭으로 연다 (모바일은 종합정보, 그 외는 컨센서스 탭)
     function openNaverStockPage(code) {
-        window.open(`https://stock.naver.com/domestic/stock/${code}/info/consensus`, "_blank", "noopener");
+        const path = IS_MOBILE ? "total" : "info/consensus";
+        window.open(`https://stock.naver.com/domestic/stock/${code}/${path}`, "_blank", "noopener");
     }
 
     // ── 매수 모달 ─────────────────────────────────────────────
