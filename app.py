@@ -104,7 +104,37 @@ _READONLY_BLOCKED_PREFIXES = ("/api/sync",)
 # GitHub `schedule` 트리거 지연 우회: 웹 프로필에서만, 요청 흐름을 시계 삼아
 # 평일 KST 17시 이후 하루 1회 roll-lite-db 워크플로를 원격 발동한다(비차단).
 from backend.app.services.workflow_dispatcher import WorkflowDispatcher
-_wf_dispatcher = WorkflowDispatcher(settings.GITHUB_DISPATCH_TOKEN, settings.DISCORD_WEBHOOK_URL)
+
+
+def _local_data_is_fresh() -> bool:
+    """로컬 DB(app_lite.db)에 오늘(KST) 수급 데이터가 이미 반영돼 있는지 확인한다.
+
+    발동 성공 시 워크플로가 이 앱을 재배포시키는데, Render는 매번 이미지를 새로
+    빌드하며 그 시점에 방금 갱신된 경량 DB를 Release에서 다시 받아온다. 그 컨테이너
+    재시작으로 WorkflowDispatcher 의 당일 완료 상태(프로세스 메모리)가 초기화되므로,
+    재배포 직후 첫 요청이 다시 조건을 만족해 같은 날 두 번째로 발동하는 것을 막기 위해
+    로컬 DB가 이미 오늘자인지를 먼저 확인한다.
+    """
+    import datetime as _dt
+
+    from backend.app.services.proposal_advisor_cache import ProposalAdvisorCache
+
+    try:
+        session = next(db_manager.get_session())
+        try:
+            latest = ProposalAdvisorCache.data_version(session)
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001 - 판단 실패 시 신선하지 않다고 보고 기존 로직에 맡김
+        return False
+    today = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=9))).strftime("%Y%m%d")
+    return bool(latest) and latest >= today
+
+
+_wf_dispatcher = WorkflowDispatcher(
+    settings.GITHUB_DISPATCH_TOKEN, settings.DISCORD_WEBHOOK_URL,
+    is_data_fresh=_local_data_is_fresh,
+)
 
 
 @app.before_request

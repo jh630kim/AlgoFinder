@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StockInfo PRO - AI 퀀트 전략별 모의투자 검증실</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <!-- ⏳ 조회 진행 중 풀스크린 로딩 오버레이 -->
@@ -227,17 +226,6 @@
                 <button id="btnCancelSellModal" style="background: #334155; color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 700; cursor: pointer;">취소</button>
                 <button id="btnConfirmManualSell" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-weight: 800; cursor: pointer;">매도 확인</button>
             </div>
-        </div>
-    </div>
-
-    <!-- 📈 종목 시세 차트 모달 팝업 -->
-    <div class="modal-overlay" id="stockChartModal">
-        <div class="modal-box modal-box-wide">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h3 id="chartModalTitle" style="margin: 0; color: #38bdf8; font-size: 16px; font-weight: 800;">📈 시세 차트</h3>
-                <span id="btnCloseChartModal" style="color: #94a3b8; font-size: 20px; font-weight: 700; cursor: pointer;">&times;</span>
-            </div>
-            <div style="height: 380px;"><canvas id="proposalChartCanvas"></canvas></div>
         </div>
     </div>
 

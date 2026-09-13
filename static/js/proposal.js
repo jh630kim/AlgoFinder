@@ -23,11 +23,7 @@
     let latestDate = "";
     let sellTargetCode = null;
     let sellMaxQty = 0;
-    let proposalChart = null;
     let lastSummary = null;
-    // 보조 차트 끝 날짜(YYYYMMDD): 매수추천 표는 판단 기준일(D-1), 그 외 표는 기준일(D-0)
-    let chartEndSignal = null;
-    let chartEndEval = null;
 
     const $ = (id) => document.getElementById(id);
     const won = (n) => (Math.round(Number(n) || 0)).toLocaleString() + " 원";
@@ -86,7 +82,6 @@
         bindClick("btnCloseSellModal", closeSellModal);
         bindClick("btnCancelSellModal", closeSellModal);
         bindClick("btnConfirmManualSell", confirmSell);
-        bindClick("btnCloseChartModal", closeChartModal);
 
         const codeInput = $("inputStockCode");
         if (codeInput) codeInput.addEventListener("blur", autofillStockInfo);
@@ -225,10 +220,6 @@
                 fetch(`/api/paper-trading/portfolio?account_type=${ACCOUNT}&target_date=${td}&mode=${MODE}`).then((r) => r.json()),
                 fetch(`/api/recommended-stocks?target_date=${td}&mode=${MODE}`).then((r) => r.json()),
             ]);
-            // 차트 끝 날짜는 렌더(=행 버튼 배선)보다 먼저 확정해야 한다.
-            // wireRowButtons가 이 값을 읽어 차트 요청에 end 파라미터로 싣기 때문.
-            chartEndEval = rec.eval_date || pf.eval_date || td;
-            chartEndSignal = rec.signal_date || pf.signal_date || chartEndEval;
             if (pf.status === "success") {
                 renderSummary(pf.summary);
                 renderHoldings(pf.positions || []);
@@ -544,13 +535,16 @@
             }));
         box.querySelectorAll("[data-sell]").forEach((b) =>
             b.addEventListener("click", () => openSellModal(JSON.parse(b.getAttribute("data-sell").replace(/&#39;/g, "'")))));
-        // 매수추천 표(recBody)는 판단 기준일(D-1)까지, 보유/매도신호 표는 기준일(D-0)까지
-        const chartEnd = box.id === "recBody" ? chartEndSignal : chartEndEval;
         box.querySelectorAll("[data-chart]").forEach((b) =>
             b.addEventListener("click", () => {
-                const [code, name] = b.getAttribute("data-chart").split("|");
-                openChartModal(code, name, chartEnd);
+                const [code] = b.getAttribute("data-chart").split("|");
+                openNaverStockPage(code);
             }));
+    }
+
+    // 네이버 증권 종목분석(컨센서스) 페이지를 새 탭으로 연다
+    function openNaverStockPage(code) {
+        window.open(`https://stock.naver.com/domestic/stock/${code}/info/consensus`, "_blank", "noopener");
     }
 
     // ── 매수 모달 ─────────────────────────────────────────────
@@ -660,78 +654,4 @@
         else alert(res.message || "매도에 실패했습니다.");
     }
 
-    // ── 차트 모달 ─────────────────────────────────────────────
-    async function openChartModal(code, name, endDate) {
-        const m = $("stockChartModal");
-        if (!m) return;
-        setText("chartModalTitle", `📈 ${name} (${code}) 최근 시세`);
-        m.classList.add("active");
-        try {
-            const qs = endDate ? `?limit=120&end=${encodeURIComponent(endDate)}` : "?limit=120";
-            const r = await fetch(`/api/stock-chart/${code}${qs}`).then((x) => x.json());
-            drawChart((r.data || []));
-        } catch (e) { console.error(e); }
-    }
-    function closeChartModal() { const m = $("stockChartModal"); if (m) m.classList.remove("active"); }
-
-    // 거래정지 연속 구간을 [시작 index, 끝 index] 목록으로 묶음
-    function suspendedSpans(rows) {
-        const spans = [];
-        let start = -1;
-        rows.forEach((d, i) => {
-            const on = !!d.is_suspended;
-            if (on && start < 0) start = i;
-            if (!on && start >= 0) { spans.push([start, i - 1]); start = -1; }
-        });
-        if (start >= 0) spans.push([start, rows.length - 1]);
-        return spans;
-    }
-
-    // 거래정지 구간을 회색 반투명 밴드 + '거래정지' 라벨로 칠하는 Chart.js 플러그인
-    function suspendedBandPlugin(spans) {
-        return {
-            id: "suspendedBand",
-            beforeDatasetsDraw(chart) {
-                if (!spans.length) return;
-                const { ctx, chartArea: area, scales: { x } } = chart;
-                ctx.save();
-                spans.forEach(([s, e]) => {
-                    const x1 = x.getPixelForValue(s);
-                    const x2 = x.getPixelForValue(e);
-                    const left = Math.min(x1, x2) - (x.getPixelForValue(1) - x.getPixelForValue(0)) / 2;
-                    const right = Math.max(x1, x2) + (x.getPixelForValue(1) - x.getPixelForValue(0)) / 2;
-                    ctx.fillStyle = "rgba(148, 163, 184, 0.18)";
-                    ctx.fillRect(left, area.top, right - left, area.bottom - area.top);
-                    ctx.fillStyle = "#94a3b8";
-                    ctx.font = "700 10px sans-serif";
-                    ctx.textAlign = "center";
-                    ctx.fillText("거래정지", (left + right) / 2, area.top + 12);
-                });
-                ctx.restore();
-            },
-        };
-    }
-
-    function drawChart(rows) {
-        const cv = $("proposalChartCanvas");
-        if (!cv || !window.Chart) return;
-        const labels = rows.map((d) => d.date);
-        const close = rows.map((d) => d.close);
-        const ma = (n) => close.map((_, i) => i < n - 1 ? null : close.slice(i - n + 1, i + 1).reduce((a, b) => a + b, 0) / n);
-        if (proposalChart) proposalChart.destroy();
-        proposalChart = new window.Chart(cv.getContext("2d"), {
-            type: "line",
-            data: {
-                labels,
-                datasets: [
-                    { label: "종가", data: close, borderColor: "#38bdf8", borderWidth: 1.5, pointRadius: 0, tension: 0.1 },
-                    { label: "MA5", data: ma(5), borderColor: "#fbbf24", borderWidth: 1, pointRadius: 0 },
-                    { label: "MA20", data: ma(20), borderColor: "#a855f7", borderWidth: 1, pointRadius: 0 },
-                ],
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: "#cbd5e1" } } },
-                scales: { x: { ticks: { color: "#64748b", maxTicksLimit: 8 } }, y: { ticks: { color: "#64748b" } } } },
-            plugins: [suspendedBandPlugin(suspendedSpans(rows))],
-        });
-    }
 })();

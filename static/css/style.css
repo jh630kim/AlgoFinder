@@ -489,9 +489,6 @@ body {
     gap: 10px;
 }
 
-/* 차트 모달 캔버스: 세로 화면에 맞춰 축소 */
-.mobile-view #stockChartModal .modal-box > div:last-child { height: 260px; }
-
 /* 로딩 오버레이 문구가 좁은 폭에서 넘치지 않도록 */
 .mobile-view .proposal-loading-overlay .pl-text {
     font-size: 13px;
